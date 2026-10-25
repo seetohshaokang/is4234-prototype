@@ -1,0 +1,10 @@
+pipeline: horizon-telemetry
+steps:
+- name: build
+  type: build
+- name: unit-tests
+  type: test
+- name: dependency-check
+  type: dependency_check
+- name: release
+  type: release

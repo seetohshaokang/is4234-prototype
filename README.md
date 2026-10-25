@@ -1,23 +1,34 @@
 # Disclosure Gate — IS4234 Prototype
 
-A Streamlit demo that shows how a systematic gate between internal security evidence
+A React + FastAPI demo that shows how a systematic gate between internal security evidence
 and public security claims could surface contradictions earlier.
 Modelled on the SolarWinds case (2017–2020) using **100% synthetic data**.
 
-## Setup (one command)
+## Setup
+
+Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and Node 18+.
 
 ```bash
-uv run python seed.py && uv run streamlit run app.py
-```
-
-Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
-
-Or install then run:
-```bash
+# 1. Install Python deps + seed DB
 uv sync
-uv run python seed.py      # generates snapshots + seeds DB
-uv run streamlit run app.py
+uv run python seed.py
+
+# 2. Install frontend deps (first time only)
+cd frontend && npm install && cd ..
+
+# 3. Run both servers (in separate terminals)
+uv run uvicorn backend.main:app --reload --port 8000   # terminal 1
+cd frontend && npm run dev                              # terminal 2
 ```
+
+Or use `make`:
+```bash
+make seed           # seed the database
+make backend        # run FastAPI on :8000
+make frontend       # run Vite dev on :5173
+```
+
+Open http://localhost:5173 in your browser.
 
 ## Roles (use the sidebar switcher)
 

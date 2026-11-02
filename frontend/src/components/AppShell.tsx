@@ -1,14 +1,15 @@
 import { type ReactNode, useEffect, useState } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldCheck, LayoutDashboard, FileText, TestTube2,
   AlertTriangle, GitBranch, ClipboardCheck, BookOpen, Info,
-  CalendarDays
+  CalendarDays, CircleHelp
 } from "lucide-react";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import { cn } from "../lib/utils";
+import { startTour } from "../lib/tour";
 
 interface Actor { id: string; name: string; role: string; }
 interface Checkpoint { id: string; label: string; date: string; description: string; applied?: boolean; }
@@ -24,10 +25,27 @@ const NAV = [
   { to: "/about",       icon: Info,            label: "About" },
 ];
 
+const TOUR_KEY = "dg-tour-seen";
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const { actorId, simDate, setActor, setSimDate } = useAppStore();
   const [jumpDate, setJumpDate] = useState("");
+  const [showWelcome, setShowWelcome] = useState(
+    () => !localStorage.getItem(TOUR_KEY)
+  );
+  const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const beginTour = () => {
+    localStorage.setItem(TOUR_KEY, "1");
+    setShowWelcome(false);
+    startTour(navigate);
+  };
+
+  const dismissWelcome = () => {
+    localStorage.setItem(TOUR_KEY, "1");
+    setShowWelcome(false);
+  };
 
   const { data: actors = [] } = useQuery<Actor[]>({
     queryKey: ["actors"],
@@ -115,7 +133,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Sim Clock */}
-        <div className="border-t border-slate-700 px-4 py-3">
+        <div data-tour="clock" className="border-t border-slate-700 px-4 py-3">
           <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
             <CalendarDays size={13} />
             <span>Sim date</span>
@@ -146,7 +164,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         {/* Checkpoints */}
-        <div className="border-t border-slate-700 px-4 py-3">
+        <div data-tour="checkpoints" className="border-t border-slate-700 px-4 py-3">
           <div className="flex items-center justify-between mb-2">
             <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">Checkpoints</div>
             <button
@@ -179,7 +197,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </div>
 
         {/* Role switcher */}
-        <div className="border-t border-slate-700 px-4 py-3">
+        <div data-tour="role" className="border-t border-slate-700 px-4 py-3">
           <div className="text-xs text-slate-400 mb-1 font-medium">Active role</div>
           <select
             value={actorId}
@@ -194,12 +212,57 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <div className="mt-1 text-xs text-slate-500">{currentActor.role.replace(/_/g, " ")}</div>
           )}
         </div>
+
+        {/* Tour relaunch */}
+        <button
+          onClick={beginTour}
+          title="Replay the guided tour"
+          className="flex items-center justify-center gap-1.5 border-t border-slate-700 px-4 py-2.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+        >
+          <CircleHelp size={14} />
+          How to use this app
+        </button>
       </aside>
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto">
         <div className="p-6 min-h-full">{children}</div>
       </main>
+
+      {/* First-visit welcome */}
+      {showWelcome && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm mx-4 p-6">
+            <h2 className="text-lg font-bold text-slate-900">Welcome to Disclosure Gate</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              A proof-of-concept of a disclosure gate: a control that checks whether a
+              company's public security claims are backed by its internal evidence.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              This POC is built around the NimbusWatch case study — the checkpoints walk
+              that company's timeline, and the actions you can take along the way show
+              how a production version would behave.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Want a quick walkthrough of what each tab does and what you can inject?
+            </p>
+            <div className="mt-5 flex gap-2 justify-end">
+              <button
+                onClick={dismissWelcome}
+                className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2"
+              >
+                Skip
+              </button>
+              <button
+                onClick={beginTour}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
+              >
+                Take the tour
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

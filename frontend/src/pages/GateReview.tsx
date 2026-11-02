@@ -24,8 +24,6 @@ interface Override {
   status: string;
 }
 
-interface Actor { id: string; name: string; role: string; }
-
 export default function GateReview() {
   const { actorId } = useAppStore();
   const qc = useQueryClient();
@@ -33,7 +31,6 @@ export default function GateReview() {
   const [showOverrideForm, setShowOverrideForm] = useState(false);
   const [overrideForm, setOverrideForm] = useState({ reason: "", conditions: "", expires_on: "" });
 
-  const { data: actors = [] } = useQuery<Actor[]>({ queryKey: ["actors"], queryFn: () => api.get("/actors").then(r => r.data) });
   const { data: claims = [] } = useQuery<Array<{ id: string; title: string }>>({ queryKey: ["claims"], queryFn: () => api.get("/claims").then(r => r.data) });
   const { data: overrides = [] } = useQuery<Override[]>({ queryKey: ["overrides"], queryFn: () => api.get("/overrides").then(r => r.data) });
 
@@ -44,9 +41,6 @@ export default function GateReview() {
     ),
     enabled: claims.length > 0,
   });
-
-  const currentActor = actors.find(a => a.id === actorId);
-  const canOverride = ["disclosure_committee", "audit_committee"].includes(currentActor?.role ?? "");
 
   const overrideMut = useMutation({
     mutationFn: (data: object) => api.post("/overrides", data),
@@ -64,7 +58,7 @@ export default function GateReview() {
           <h1 className="text-2xl font-bold text-slate-900">Gate Review</h1>
           <p className="text-sm text-slate-500">Gate verdicts and override management.</p>
         </div>
-        {canOverride && selectedClaim && (
+        {selectedClaim && (
           <button
             onClick={() => setShowOverrideForm(true)}
             className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
@@ -202,7 +196,7 @@ export default function GateReview() {
             </div>
             {overrideMut.isError && (
               <div className="text-xs text-red-600 bg-red-50 rounded p-2">
-                {(overrideMut.error as Error)?.message ?? "Error submitting override"}
+                {(overrideMut.error as any)?.response?.data?.detail ?? "Error submitting override"}
               </div>
             )}
           </CardBody>

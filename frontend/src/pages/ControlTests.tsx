@@ -40,6 +40,7 @@ export default function ControlTests() {
           <p className="text-sm text-slate-500">Automated evidence tests — never tested = BLOCK.</p>
         </div>
         <button
+          data-tour="run-tests"
           onClick={() => runAll.mutate()}
           disabled={runAll.isPending}
           className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"

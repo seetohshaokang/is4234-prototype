@@ -416,6 +416,12 @@ def create_override(session: Session, claim_id: str, by_id: str,
                     reason: str, conditions: str, expires_on: date) -> Override:
     if len(reason) < 50:
         raise ValueError("Override reason must be at least 50 characters.")
+    claim = session.get(Claim, claim_id)
+    if claim and by_id == claim.owner_id:
+        raise ValueError(
+            f"Independence rule: {by_id} owns {claim_id} and cannot override it. "
+            "A disclosure-committee member must override instead."
+        )
     as_of = get_clock(session)
     ov_id = f"OV-{claim_id}-{as_of}"
     ov = Override(id=ov_id, claim_id=claim_id, by_id=by_id, reason=reason,

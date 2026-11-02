@@ -110,6 +110,7 @@ export default function FindingsPage() {
           <p className="text-sm text-slate-500">Security findings from automated and manual tests.</p>
         </div>
         <button
+          data-tour="report-finding"
           onClick={() => setShowReport(v => !v)}
           className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
         >

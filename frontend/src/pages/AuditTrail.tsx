@@ -46,6 +46,7 @@ export default function AuditTrail() {
         </div>
         <div className="flex gap-2">
           <button
+            data-tour="tamper-demo"
             onClick={() => tamperMut.mutate()}
             disabled={tamperMut.isPending}
             className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"

@@ -11,10 +11,11 @@ If a mapped control is failing, untested, or has an open HIGH/CRITICAL finding, 
 is **BLOCKED**. Blocked claims can only proceed via a **documented exception** (an override
 or an approved risk acceptance), both of which expire and are logged.
 
-The demo replays a fictional company ("NimbusWatch") across 2017–2020, modelled on the
-SolarWinds case, using 100% synthetic data. Its point: the gate surfaces contradictions
-between what a company says publicly and what it knows internally — years before an
-incident forces the issue.
+This is a **proof of concept** built around the NimbusWatch case study (2017–2020,
+modelled on SolarWinds, 100% synthetic data). The checkpoints follow that company's
+timeline; the actions you can take between them show how a production version would
+behave. Its point: the gate surfaces contradictions between what a company says
+publicly and what it knows internally — years before an incident forces the issue.
 
 ## The mental model: story spine + your injections
 
@@ -72,7 +73,7 @@ allowed to do depends on who you are.
 
 | Action | Where | Engine effect |
 |---|---|---|
-| Create override | Gate Review | BLOCK → ESCALATE (R8). Independence enforced: the claim's owner cannot override it. Expires on a date you set. |
+| Create override | Gate Review → expand a claim → Create Override | BLOCK → ESCALATE (R8). Independence enforced: the claim's owner is rejected. Expires on a date you set. |
 | Publish claim | Claim Registry → expand → Publish | Blocked claims refuse to publish. Published claims raise escalation stakes on their controls. |
 | Withdraw claim | Claim Registry → expand → Withdraw | Pulls a published claim back |
 
@@ -110,6 +111,90 @@ allowed to do depends on who you are.
 | CP6 | Try to publish C-02 | Gate refuses — "BLOCKED with no active override" |
 | CP7 / CP8 | Jump the sim date +90 days | Escalations pile up to L4 |
 | CP9 | Tamper Demo → then Verify Chain | Chain detects corruption on the copy; real chain stays valid |
+
+## Expected outcomes — the gist
+
+When you inject a variable, the engine should react like this. If it doesn't, something
+is wrong:
+
+| You inject | Expected result |
+|---|---|
+| Finding, severity HIGH or CRITICAL, on a control mapped to a claim | Claim → **BLOCK** (rule R3); an L1 escalation opens |
+| Finding, severity MEDIUM, on a mapped control | Claim → **ESCALATE** (rule R5) |
+| Finding on an unmapped/no-claim control | No verdict change — finding just sits open and ages |
+| Close the finding | R3 block lifts; claim returns to whatever other rules say |
+| Risk acceptance PROPOSED on the blocking finding | Still **BLOCK** — unapproved exceptions don't count (R6) |
+| Risk acceptance APPROVED | BLOCK → **ESCALATE** (R7), never APPROVE — the committee's risk decision is documented but still visible |
+| Override on a BLOCKED claim | BLOCK → **ESCALATE** (R8), never APPROVE — overrides buy time, not absolution |
+| Override by the claim's owner | **Rejected** — "Independence rule" error |
+| Publish a BLOCKED claim | **Rejected** — "Cannot publish: claim is BLOCKED with no active override" |
+| Publish an APPROVE claim | Status → published; its controls' findings now escalate via the published-claim path |
+| Clock jump past finding age 30/60/90 days | Escalations appear at L2/L3/L4 respectively |
+| Override expiry date passes | Override → EXPIRED; claim snaps back to its real verdict |
+
+One subtlety worth knowing: a claim can be blocked by **more than one rule**. Accepting a
+finding's risk (R3→R7) does nothing for a claim that is *also* blocked by a failing test
+(R2) — e.g. approving an RA on the AC-01 finding leaves C-01 BLOCK, because AC-01's test
+still fails. The audit page shows every rule that fired, so always check which rules are
+holding a claim down.
+
+## Manual verification checklist
+
+Run these in order to confirm the app works end-to-end. Start from
+**Sidebar → Checkpoints → Reset** unless told otherwise.
+
+### V1 — Story spine works both directions
+1. Click **CP3**. Expect: sim date `2018-06-04`; CP1–CP3 buttons blue; finding
+   `F-2018-VPN` exists on the Findings page.
+2. Click **CP1**. Expect: sim date rewinds to `2017-12-01`; only CP1 blue;
+   `F-2018-VPN` is gone.
+3. Click **CP9**, then **CP1** again. Expect: full apply then full rewind — no errors,
+   Findings returns to the 3 seed findings (`F-2017-001`–`003`).
+
+### V2 — Gate evaluates evidence correctly (at CP1)
+After clicking **CP1**, check Claim Registry / Gate Review. Expected verdicts:
+- C-01, C-02, C-03 → **BLOCK** (failing tests + open findings — rules R2/R3)
+- C-04 → **ESCALATE** (no control mapped — rule R0)
+- C-05 → **APPROVE** (manual evidence covers CM-01)
+- Findings page shows exactly 3 open HIGH findings (AC-01, IA-01, SA-01).
+
+### V3 — Override + independence rule
+1. Stay at CP1. As **T. Grant**, Gate Review → expand C-01 → Create Override → submit
+   (reason ≥ 50 chars, any future expiry). Expect: **rejected** — "Independence rule:
+   P-GRANT owns C-01 and cannot override it."
+2. Switch to **M. Okafor**, submit the same override. Expect: created; C-01 verdict
+   BLOCK → **ESCALATE** (rule R8).
+3. Click **CP2**. Expect: the override auto-expires; C-01 returns to **BLOCK**.
+
+### V4 — Finding injection drives the engine
+1. Anywhere in the story: Findings → Report Finding → control **CM-01**, severity
+   HIGH, submit.
+2. Check C-05. Expect: APPROVE → **BLOCK** (R3).
+3. Escalations: an L1 escalation for the new finding is assigned to its owner.
+
+### V5 — Risk acceptance is the documented escape
+1. On the injected CM-01 finding: expand → propose a risk acceptance (any rationale +
+   future expiry). Expect: C-05 still **BLOCK** (R6 — proposed ≠ approved).
+2. Approve it as **M. Okafor**. Expect: C-05 → **ESCALATE** (R7).
+3. Close the finding as Priya. Expect: C-05 → **APPROVE**.
+
+### V6 — Publish guard
+1. At CP1, expand C-01 in Claim Registry → Publish.
+   Expect: rejected — "claim is BLOCKED with no active override".
+2. Publish C-05 (when APPROVE). Expect: succeeds; status → published.
+
+### V7 — Escalation ageing
+1. After CP3 (F-2018-VPN open): Jump the clock to `2018-09-10`.
+   Expect: an **L4** escalation reaches J. Morales's inbox (Audit Committee).
+
+### V8 — Audit chain is tamper-evident
+1. Audit Trail → **Verify Chain**. Expect: "Chain is valid".
+2. **Tamper Demo**. Expect: "Tamper detected — chain broke at sequence N".
+3. **Verify Chain** again. Expect: still valid — the demo corrupted a *copy*.
+
+### V9 — Time injection
+1. Sidebar → Jump to `2020-01-01`. Expect: sim date changes; controls re-test
+   against the latest snapshot ≤ that date; stale test badges appear.
 
 ## What this prototype deliberately does not do
 

@@ -33,6 +33,15 @@ from seed import seed_db
 
 app = FastAPI(title="Disclosure Gate API", version="0.1.0")
 create_tables()  # ensure newly added tables exist on older DBs
+# lightweight column migration for pre-requested_level DBs
+try:
+    from sqlalchemy import text
+    from db import engine as _engine
+    with _engine.begin() as _conn:
+        _conn.execute(text("ALTER TABLE escalation ADD COLUMN requested_level INTEGER"))
+        _conn.execute(text("UPDATE escalation SET requested_level = level"))
+except Exception:
+    pass  # column already exists or fresh schema
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -367,8 +376,11 @@ def api_propose_ra(finding_id: str, body: ProposeRABody):
 @app.post("/risk-acceptances/{ra_id}/approve")
 def api_approve_ra(ra_id: str, body: ActorBody):
     with get_session() as s:
-        ra = approve_risk_acceptance(s, ra_id, body.actor_id)
-        return {"id": ra.id, "status": ra.status}
+        try:
+            ra = approve_risk_acceptance(s, ra_id, body.actor_id)
+            return {"id": ra.id, "status": ra.status}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
 
 # ── Gate Review ───────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ from db import (
     GateDecision, GateVerdict, GateTrigger,
     Override, OverrideStatus,
     Escalation, EscalationStatus,
-    ManualEvidence, AuditEvent, CheckpointApplied, Person,
+    ManualEvidence, AuditEvent, CheckpointApplied, Person, Role,
 )
 from engine.control_tests import run_test
 from engine.gate import evaluate
@@ -292,7 +292,8 @@ def _run_escalation_ageing(session: Session, as_of: date, actor_id: str) -> None
 
     existing_escs = [
         {"id": e.id, "subject_type": e.subject_type, "subject_id": e.subject_id,
-         "level": e.level, "status": e.status, "created_on": e.created_on,
+         "level": e.level, "requested_level": e.requested_level,
+         "status": e.status, "created_on": e.created_on,
          "acknowledged_on": e.acknowledged_on}
         for e in session.exec(select(Escalation)).all()
     ]
@@ -392,6 +393,11 @@ def propose_risk_acceptance(session: Session, finding_id: str, proposed_by: str,
 
 def approve_risk_acceptance(session: Session, ra_id: str, approved_by: str) -> RiskAcceptance:
     as_of = get_clock(session)
+    approver = session.get(Person, approved_by)
+    if not approver or approver.role != Role.DISCLOSURE_COMMITTEE:
+        raise ValueError(
+            "Only a disclosure-committee member can approve a risk acceptance."
+        )
     ra = session.get(RiskAcceptance, ra_id)
     if not ra:
         raise ValueError(f"Risk acceptance {ra_id} not found")

@@ -53,9 +53,11 @@ def compute_new_escalations(
 
     new_escalations = []
 
-    # Index existing open escalations by (subject_id, level)
+    # Index existing open escalations by (subject_id, requested_level).
+    # Bumped escalations count toward the level they originated at, so
+    # re-runs don't recreate them.
     existing = {
-        (e["subject_id"], e["level"])
+        (e["subject_id"], e.get("requested_level") or e["level"])
         for e in existing_escalations
         if e["status"] in ("OPEN", "ACK")
     }
@@ -116,6 +118,7 @@ def compute_new_escalations(
                     "subject_type": esc["subject_type"],
                     "subject_id": subject_id,
                     "level": next_level,
+                    "requested_level": next_level,
                     "assigned_to_role": LEVEL_ROLES[next_level],
                     "assigned_to_id": None,
                     "reason": f"Escalation at level {esc['level']} unacknowledged for 14 days — auto-promoted.",
@@ -145,6 +148,7 @@ def _make(finding_id: str, level: int, assignee_id: str | None, skipped: list[st
         "subject_type": "finding",
         "subject_id": finding_id,
         "level": actual_level,
+        "requested_level": level,
         "assigned_to_role": role,
         "assigned_to_id": assignee_id,
         "reason": reason,

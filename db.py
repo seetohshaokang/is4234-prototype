@@ -215,6 +215,7 @@ class Escalation(SQLModel, table=True):
     subject_type: str  # "finding" | "claim"
     subject_id: str
     level: int
+    requested_level: Optional[int] = None  # original level before independence-skip bump
     assigned_to_role: Role
     assigned_to_id: Optional[str] = None
     reason: str

@@ -10,6 +10,7 @@ import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import { cn } from "../lib/utils";
 import { startTour } from "../lib/tour";
+import DemoCoach from "./DemoCoach";
 
 interface Actor { id: string; name: string; role: string; }
 interface Checkpoint { id: string; label: string; date: string; description: string; applied?: boolean; }
@@ -26,6 +27,7 @@ const NAV = [
 ];
 
 const TOUR_KEY = "dg-tour-seen";
+const COACH_KEY = "dg-coach-step";
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { actorId, simDate, setActor, setSimDate } = useAppStore();
@@ -33,13 +35,29 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [showWelcome, setShowWelcome] = useState(
     () => !localStorage.getItem(TOUR_KEY)
   );
+  const [coachStep, setCoachStep] = useState<number | null>(() => {
+    const saved = localStorage.getItem(COACH_KEY);
+    return saved !== null ? Number(saved) : null;
+  });
   const navigate = useNavigate();
   const qc = useQueryClient();
+
+  const setCoach = (i: number | null) => {
+    setCoachStep(i);
+    if (i === null) localStorage.removeItem(COACH_KEY);
+    else localStorage.setItem(COACH_KEY, String(i));
+  };
 
   const beginTour = () => {
     localStorage.setItem(TOUR_KEY, "1");
     setShowWelcome(false);
     startTour(navigate);
+  };
+
+  const beginDemo = () => {
+    localStorage.setItem(TOUR_KEY, "1");
+    setShowWelcome(false);
+    setCoach(0);
   };
 
   const dismissWelcome = () => {
@@ -213,14 +231,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
           )}
         </div>
 
-        {/* Tour relaunch */}
+        {/* Guided demo relaunch */}
         <button
-          onClick={beginTour}
-          title="Replay the guided tour"
+          onClick={() => setCoach(0)}
+          title="Start the guided demo"
           className="flex items-center justify-center gap-1.5 border-t border-slate-700 px-4 py-2.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
         >
           <CircleHelp size={14} />
-          How to use this app
+          Guided demo
         </button>
       </aside>
 
@@ -244,24 +262,39 @@ export default function AppShell({ children }: { children: ReactNode }) {
               how a production version would behave.
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              Want a quick walkthrough of what each tab does and what you can inject?
+              Want a guided demo of the case study, or a quick tour of each tab?
             </p>
             <div className="mt-5 flex gap-2 justify-end">
               <button
                 onClick={dismissWelcome}
-                className="text-sm text-slate-500 hover:text-slate-700 px-4 py-2"
+                className="text-sm text-slate-500 hover:text-slate-700 px-3 py-2"
               >
                 Skip
               </button>
               <button
                 onClick={beginTour}
+                className="text-sm text-slate-600 hover:text-slate-800 border border-slate-300 px-3 py-2 rounded-md transition-colors"
+              >
+                Feature tour
+              </button>
+              <button
+                onClick={beginDemo}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
               >
-                Take the tour
+                Guided demo
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* Guided demo coach panel */}
+      {coachStep !== null && (
+        <DemoCoach
+          step={coachStep}
+          onStep={setCoach}
+          onFeatureTour={beginTour}
+        />
       )}
     </div>
   );

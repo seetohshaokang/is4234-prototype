@@ -11,7 +11,7 @@ import { useAppStore } from "../store/useAppStore";
 import { cn } from "../lib/utils";
 
 interface Actor { id: string; name: string; role: string; }
-interface Checkpoint { id: string; label: string; date: string; description: string; }
+interface Checkpoint { id: string; label: string; date: string; description: string; applied?: boolean; }
 
 const NAV = [
   { to: "/",            icon: LayoutDashboard, label: "Dashboard" },
@@ -56,7 +56,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
   });
 
   const cpMut = useMutation({
-    mutationFn: (cpId: string) => api.post(`/checkpoints/${cpId}/apply`),
+    mutationFn: (cpId: string) => api.post(`/checkpoints/${cpId}/goto`),
+    onSuccess: () => {
+      qc.invalidateQueries();
+      api.get("/clock").then(r => setSimDate(r.data.date));
+    },
+  });
+
+  const resetMut = useMutation({
+    mutationFn: () => api.post("/demo/reset"),
     onSuccess: () => {
       qc.invalidateQueries();
       api.get("/clock").then(r => setSimDate(r.data.date));
@@ -115,7 +123,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
         {/* Checkpoints */}
         <div className="border-t border-slate-700 px-4 py-3">
-          <div className="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wider">Checkpoints</div>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">Checkpoints</div>
+            <button
+              onClick={() => resetMut.mutate()}
+              disabled={resetMut.isPending || cpMut.isPending}
+              title="Reset demo state (before CP1)"
+              className="text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+            >
+              Reset
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-1">
             {checkpoints.map(cp => (
               <button
@@ -123,7 +141,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 onClick={() => cpMut.mutate(cp.id)}
                 disabled={cpMut.isPending}
                 title={`${cp.date}: ${cp.description}`}
-                className="text-xs bg-slate-700 hover:bg-blue-700 text-slate-300 hover:text-white rounded px-1.5 py-1 transition-colors disabled:opacity-50"
+                className={cn(
+                  "text-xs rounded px-1.5 py-1 transition-colors disabled:opacity-50",
+                  cp.applied
+                    ? "bg-blue-700 text-white hover:bg-blue-600"
+                    : "bg-slate-700 hover:bg-blue-700 text-slate-300 hover:text-white"
+                )}
               >
                 {cp.id}
               </button>

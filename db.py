@@ -253,3 +253,15 @@ class CheckpointApplied(SQLModel, table=True):
     __tablename__ = "checkpointapplied"
     cp_id: str = Field(primary_key=True)
     applied_on: date
+
+
+class Incident(SQLModel, table=True):
+    __tablename__ = "incident"
+    id: str = Field(primary_key=True)
+    reported_on: date
+    reporter: str
+    product: str
+    component: str
+    description: str
+    severity_rating: int = 0
+    rated_by: str

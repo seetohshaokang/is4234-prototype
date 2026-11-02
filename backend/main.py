@@ -18,7 +18,7 @@ from db import (
     get_session, Claim, Control, Finding, FindingStatus, GateDecision,
     GateVerdict, Escalation, EscalationStatus, Override, OverrideStatus,
     RiskAcceptance, AuditEvent, ControlTest, TestResult, Person,
-    ClaimControlMap, ManualEvidence,
+    ClaimControlMap, ManualEvidence, CheckpointApplied, create_tables,
 )
 from services import (
     get_clock, set_clock, advance_clock, run_all_tests,
@@ -29,8 +29,10 @@ from services import (
 )
 from audit import verify_chain, append_event
 from db import GateTrigger
+from seed import seed_db
 
 app = FastAPI(title="Disclosure Gate API", version="0.1.0")
+create_tables()  # ensure newly added tables exist on older DBs
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173"],
@@ -49,6 +51,20 @@ ACTORS = [
     {"id": "P-LEO",     "name": "Leo K.",    "role": "control_owner",        "title": "DevOps Engineer"},
 ]
 ACTORS_BY_ID = {a["id"]: a for a in ACTORS}
+
+CHECKPOINT_META = [
+    ("CP1",  "2017-12-01", "Claims drafted, no tests"),
+    ("CP1b", "2017-12-01", "First test run — AC-01/IA-01/SA-01 FAIL"),
+    ("CP2",  "2018-03-02", "Override expires → C-01 back to BLOCK"),
+    ("CP3",  "2018-06-04", "VPN gap reported → F-2018-VPN"),
+    ("CP4",  "2018-09-03", "90 days no fix → L4 escalation"),
+    ("CP5",  "2019-08-16", 'Internal review: "access inappropriate"'),
+    ("CP6",  "2019-11-19", "ftp_pass=nimbus123 found in public repo"),
+    ("CP7",  "2020-06-15", "Incident 1: Customer A"),
+    ("CP8",  "2020-10-14", "Incident 2: Customer B"),
+    ("CP9",  "2020-12-14", "Wrap-up comparison panel"),
+]
+CHECKPOINT_ORDER = [cp_id for cp_id, _, _ in CHECKPOINT_META]
 
 
 def _j(s: Optional[str]) -> Any:
@@ -94,6 +110,52 @@ def api_apply_checkpoint(cp_id: str):
     with get_session() as s:
         apply_checkpoint(s, cp_id)
     return {"ok": True, "cp_id": cp_id}
+
+
+def _applied_prefix() -> tuple[set, int]:
+    """Return (applied cp ids, length of longest applied prefix of CHECKPOINT_ORDER)."""
+    with get_session() as s:
+        applied = {r.cp_id for r in s.exec(select(CheckpointApplied)).all()}
+    n = 0
+    while n < len(CHECKPOINT_ORDER) and CHECKPOINT_ORDER[n] in applied:
+        n += 1
+    return applied, n
+
+
+def _replay_to(target_idx: int) -> None:
+    """Rebuild demo state deterministically: reseed, then re-apply CPs in order."""
+    seed_db()
+    with get_session() as s:
+        for cp in CHECKPOINT_ORDER[: target_idx + 1]:
+            apply_checkpoint(s, cp)
+
+
+@app.post("/checkpoints/{cp_id}/goto")
+def api_goto_checkpoint(cp_id: str):
+    """Jump to a checkpoint like a timeline scrubber.
+
+    Forward  → apply the missing checkpoints in order (manual actions preserved).
+    Backward → reseed and replay CP1..target (manual actions are lost).
+    """
+    if cp_id not in CHECKPOINTS:
+        raise HTTPException(404, f"Unknown checkpoint: {cp_id}")
+    target_idx = CHECKPOINT_ORDER.index(cp_id)
+    applied, prefix = _applied_prefix()
+    clean = applied == set(CHECKPOINT_ORDER[:prefix])
+    if clean and prefix < target_idx + 1:
+        with get_session() as s:
+            for cp in CHECKPOINT_ORDER[prefix : target_idx + 1]:
+                apply_checkpoint(s, cp)
+    elif not (clean and prefix == target_idx + 1):
+        _replay_to(target_idx)
+    return {"ok": True, "cp_id": cp_id}
+
+
+@app.post("/demo/reset")
+def api_demo_reset():
+    """Wipe all demo state and reseed (jump back to before CP1)."""
+    seed_db()
+    return {"ok": True}
 
 @app.post("/seed")
 def api_seed():
@@ -446,20 +508,11 @@ def api_mark_reviewed(test_id: str, body: ActorBody):
 @app.get("/checkpoints")
 def api_list_checkpoints():
     """Return ordered list of checkpoint metadata for sidebar buttons."""
-    meta = [
-        ("CP1",  "2017-12-01", "Claims drafted, no tests"),
-        ("CP1b", "2017-12-01", "First test run — AC-01/IA-01/SA-01 FAIL"),
-        ("CP2",  "2018-03-02", "Override expires → C-01 back to BLOCK"),
-        ("CP3",  "2018-06-04", "VPN gap reported → F-2018-VPN"),
-        ("CP4",  "2018-09-03", "90 days no fix → L4 escalation"),
-        ("CP5",  "2019-08-16", 'Internal review: "access inappropriate"'),
-        ("CP6",  "2019-11-19", "ftp_pass=nimbus123 found in public repo"),
-        ("CP7",  "2020-06-15", "Incident 1: Customer A"),
-        ("CP8",  "2020-10-14", "Incident 2: Customer B"),
-        ("CP9",  "2020-12-14", "Wrap-up comparison panel"),
-    ]
-    return [{"id": cp_id, "label": cp_id, "date": d, "description": desc}
-            for cp_id, d, desc in meta if cp_id in CHECKPOINTS]
+    with get_session() as s:
+        applied = {r.cp_id for r in s.exec(select(CheckpointApplied)).all()}
+    return [{"id": cp_id, "label": cp_id, "date": d, "description": desc,
+             "applied": cp_id in applied}
+            for cp_id, d, desc in CHECKPOINT_META if cp_id in CHECKPOINTS]
 
 
 @app.get("/gate/evaluate/{claim_id}")
@@ -533,7 +586,7 @@ def api_audit_simple(limit: int = 100):
             select(AuditEvent).order_by(AuditEvent.seq.desc()).limit(limit)
         ).all())
         return [{
-            "id": e.id, "seq": e.seq, "ts_sim": str(e.ts_sim),
+            "id": e.seq, "seq": e.seq, "ts_sim": str(e.ts_sim),
             "actor_id": e.actor_id, "action": e.action,
             "subject_type": e.subject_type, "subject_id": e.subject_id,
             "payload_json": e.payload, "hash": e.hash,

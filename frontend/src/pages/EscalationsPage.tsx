@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
@@ -26,10 +26,22 @@ const LEVEL_LABELS: Record<number, string> = {
 
 export default function EscalationsPage() {
   const { actorId } = useAppStore();
+  const qc = useQueryClient();
 
   const { data: escalations = [], isLoading } = useQuery<Escalation[]>({
     queryKey: ["escalations"],
     queryFn: () => api.get("/escalations").then(r => r.data),
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["escalations"] });
+
+  const ackMut = useMutation({
+    mutationFn: (id: number) => api.post(`/escalations/${id}/ack`, { actor_id: actorId }),
+    onSuccess: invalidate,
+  });
+  const resolveMut = useMutation({
+    mutationFn: (id: number) => api.post(`/escalations/${id}/resolve`, { actor_id: actorId }),
+    onSuccess: invalidate,
   });
 
   const mine = escalations.filter(e => e.assigned_to_id === actorId);
@@ -59,6 +71,7 @@ export default function EscalationsPage() {
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Reason</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Created</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
+                  <th className="px-5 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -74,6 +87,28 @@ export default function EscalationsPage() {
                     <td className="px-5 py-2.5 text-xs text-slate-600 max-w-xs truncate">{e.reason}</td>
                     <td className="px-5 py-2.5 text-xs text-slate-400">{e.created_on}</td>
                     <td className="px-5 py-2.5"><Badge value={e.status} /></td>
+                    <td className="px-5 py-2.5">
+                      <div className="flex items-center gap-3 justify-end">
+                        {e.status === "OPEN" && (
+                          <button
+                            onClick={() => ackMut.mutate(e.id)}
+                            disabled={ackMut.isPending}
+                            className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                          >
+                            Ack
+                          </button>
+                        )}
+                        {(e.status === "OPEN" || e.status === "ACK") && (
+                          <button
+                            onClick={() => resolveMut.mutate(e.id)}
+                            disabled={resolveMut.isPending}
+                            className="text-xs text-emerald-600 hover:text-emerald-800 disabled:opacity-50"
+                          >
+                            Resolve
+                          </button>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

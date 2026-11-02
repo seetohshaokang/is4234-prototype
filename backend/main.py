@@ -97,6 +97,8 @@ def api_advance_clock(body: AdvanceBody):
 def api_set_clock(body: SetClockBody):
     with get_session() as s:
         new_date = set_clock(s, date.fromisoformat(body.date))
+        run_all_tests(s)
+        evaluate_all_claims(s, GateTrigger.CLOCK_ADVANCE)
         return {"date": str(new_date)}
 
 @app.get("/actors")

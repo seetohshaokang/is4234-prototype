@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -26,6 +26,7 @@ const NAV = [
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { actorId, simDate, setActor, setSimDate } = useAppStore();
+  const [jumpDate, setJumpDate] = useState("");
   const qc = useQueryClient();
 
   const { data: actors = [] } = useQuery<Actor[]>({
@@ -68,6 +69,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
     onSuccess: () => {
       qc.invalidateQueries();
       api.get("/clock").then(r => setSimDate(r.data.date));
+    },
+  });
+
+  const setClockMut = useMutation({
+    mutationFn: (d: string) => api.post("/clock/set", { date: d }),
+    onSuccess: (res) => {
+      setSimDate(res.data.date);
+      qc.invalidateQueries();
     },
   });
 
@@ -119,6 +128,21 @@ export default function AppShell({ children }: { children: ReactNode }) {
           >
             +1 day
           </button>
+          <div className="flex gap-1 mt-1">
+            <input
+              type="date"
+              value={jumpDate}
+              onChange={e => setJumpDate(e.target.value)}
+              className="flex-1 min-w-0 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600 px-1.5 py-1 focus:outline-none focus:border-blue-500"
+            />
+            <button
+              onClick={() => jumpDate && setClockMut.mutate(jumpDate)}
+              disabled={!jumpDate || setClockMut.isPending}
+              className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded px-2 py-1 transition-colors disabled:opacity-50"
+            >
+              Jump
+            </button>
+          </div>
         </div>
 
         {/* Checkpoints */}

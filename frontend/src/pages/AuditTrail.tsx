@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { CheckCircle, XCircle, ShieldCheck } from "lucide-react";
+import { CheckCircle, XCircle, ShieldCheck, FlaskConical } from "lucide-react";
 import api from "../api/client";
 import Card, { CardBody } from "../components/Card";
 
@@ -18,6 +18,7 @@ interface AuditEvent {
 
 export default function AuditTrail() {
   const [verifyResult, setVerifyResult] = useState<{ valid: boolean; broken_at: number | null } | null>(null);
+  const [tamperResult, setTamperResult] = useState<{ valid: boolean; broken_at: number | null } | null>(null);
 
   const { data: events = [], isLoading } = useQuery<AuditEvent[]>({
     queryKey: ["audit"],
@@ -29,6 +30,11 @@ export default function AuditTrail() {
     onSuccess: (data) => setVerifyResult(data),
   });
 
+  const tamperMut = useMutation({
+    mutationFn: () => api.post("/audit/tamper-demo").then(r => r.data),
+    onSuccess: (data) => setTamperResult(data),
+  });
+
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 
   return (
@@ -38,15 +44,35 @@ export default function AuditTrail() {
           <h1 className="text-2xl font-bold text-slate-900">Audit Trail</h1>
           <p className="text-sm text-slate-500">Hash-chained append-only log of all system actions.</p>
         </div>
-        <button
-          onClick={() => verifyMut.mutate()}
-          disabled={verifyMut.isPending}
-          className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
-        >
-          <ShieldCheck size={16} />
-          {verifyMut.isPending ? "Verifying…" : "Verify Chain"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => tamperMut.mutate()}
+            disabled={tamperMut.isPending}
+            className="flex items-center gap-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
+          >
+            <FlaskConical size={16} />
+            {tamperMut.isPending ? "Running…" : "Tamper Demo"}
+          </button>
+          <button
+            onClick={() => verifyMut.mutate()}
+            disabled={verifyMut.isPending}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
+          >
+            <ShieldCheck size={16} />
+            {verifyMut.isPending ? "Verifying…" : "Verify Chain"}
+          </button>
+        </div>
       </div>
+
+      {tamperResult && (
+        <div className={`flex items-center gap-2 rounded-md px-4 py-3 text-sm font-medium ${
+          tamperResult.valid ? "bg-amber-50 text-amber-800 border border-amber-200" : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+        }`}>
+          {tamperResult.valid
+            ? "Tampered copy still verifies — chain did NOT detect tampering."
+            : `Tamper detected — chain broke at sequence ${tamperResult.broken_at} on the corrupted copy.`}
+        </div>
+      )}
 
       {verifyResult && (
         <div className={`flex items-center gap-2 rounded-md px-4 py-3 text-sm font-medium ${

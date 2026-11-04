@@ -85,8 +85,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.get("/personas").then(r => r.data),
   });
 
+  const ROLE_LABELS: Record<string, string> = {
+    control_owner:        "DevSecOps",
+    security_lead:        "Security Lead",
+    disclosure_committee: "Disclosure Committee",
+    independent_auditor:  "External Auditor",
+    audit_committee:      "Audit Committee",
+  };
+
   const allPersonas: Array<{ id: string; name: string; role: string; title: string }> = [
-    { id: "PUBLIC", name: "Public (no role)", role: "public", title: "" },
+    { id: "PUBLIC", name: "Public", role: "public", title: "" },
     ...personas,
   ];
 
@@ -139,14 +147,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
             className="w-full bg-black/20 text-white text-xs rounded border border-white/10 px-2 py-1.5 focus:outline-none focus:border-white/30"
           >
             {allPersonas.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>
+                {ROLE_LABELS[p.role] ?? p.name}
+              </option>
             ))}
           </select>
           {currentPersona && currentPersona.role !== "public" && (
-            <div className="mt-1 text-xs text-slate-400">{currentPersona.role.replace(/_/g, " ")}</div>
-          )}
-          {currentPersona?.title && (
-            <div className="mt-0.5 text-xs text-slate-500 truncate">{currentPersona.title}</div>
+            <div className="mt-1 text-xs text-slate-400">{currentPersona.name}</div>
           )}
         </div>
 

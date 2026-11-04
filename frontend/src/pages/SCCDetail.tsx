@@ -1,9 +1,7 @@
-import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import api from "../api/client";
-import { useAppStore } from "../store/useAppStore";
 import Card, { CardHeader, CardBody } from "../components/Card";
 
 interface Interval {
@@ -37,20 +35,6 @@ interface SCCDetail {
   versions: SCCVersion[];
 }
 
-interface Citation {
-  id: string;
-  sccversion_id: string;
-  kind: string;
-  period_from: string;
-  period_to: string;
-  uptime_pct: number;
-  unknown_pct: number;
-  target_met: boolean;
-  citation_string: string;
-  issued_by: string;
-  issued_on: string;
-  record_hash: string;
-}
 
 function stateColor(state: string) {
   switch (state) {
@@ -100,10 +84,6 @@ function versionStatusBadge(status: string) {
 export default function SCCDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { actorId } = useAppStore();
-  const [citeForm, setCiteForm] = useState({ sccversion_id: "", period_from: "", period_to: "", kind: "ANNUAL" });
-  const [citeResult, setCiteResult] = useState<Citation | null>(null);
-  const [citeError, setCiteError] = useState("");
 
   const { data: scc, isLoading, error } = useQuery<SCCDetail>({
     queryKey: ["scc", id],
@@ -111,29 +91,11 @@ export default function SCCDetail() {
     enabled: !!id,
   });
 
-  const { data: citations = [] } = useQuery<Citation[]>({
-    queryKey: ["citations"],
-    queryFn: () => api.get("/citations").then(r => r.data),
-  });
-
-  const citeMut = useMutation({
-    mutationFn: (payload: object) => api.post("/citations/generate", payload).then(r => r.data),
-    onSuccess: (data: Citation) => {
-      setCiteResult(data);
-      setCiteError("");
-    },
-    onError: (e: any) => setCiteError(e.response?.data?.detail ?? "Citation generation failed"),
-  });
-
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
   if (error || !scc) return (
     <div className="text-red-600 text-sm">
       Failed to load SCC {id}. {(error as any)?.message}
     </div>
-  );
-
-  const sccCitations = citations.filter(c =>
-    scc.versions.some(v => v.id === c.sccversion_id)
   );
 
   const sortedVersions = [...scc.versions].sort((a, b) => a.version - b.version);
@@ -274,131 +236,6 @@ export default function SCCDetail() {
         ))}
       </div>
 
-      {/* Cite this SCC */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-sm font-semibold text-slate-700">Cite this SCC</h2>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">SCC Version</label>
-              <select
-                value={citeForm.sccversion_id}
-                onChange={e => setCiteForm(f => ({ ...f, sccversion_id: e.target.value }))}
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Select version…</option>
-                {scc.versions.map(v => (
-                  <option key={v.id} value={v.id}>{v.id} (v{v.version}, {v.status})</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Kind</label>
-              <select
-                value={citeForm.kind}
-                onChange={e => setCiteForm(f => ({ ...f, kind: e.target.value }))}
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              >
-                <option value="ANNUAL">ANNUAL</option>
-                <option value="QUARTERLY">QUARTERLY</option>
-                <option value="CUSTOM">CUSTOM</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Period From</label>
-              <input
-                type="date"
-                value={citeForm.period_from}
-                onChange={e => setCiteForm(f => ({ ...f, period_from: e.target.value }))}
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Period To</label>
-              <input
-                type="date"
-                value={citeForm.period_to}
-                onChange={e => setCiteForm(f => ({ ...f, period_to: e.target.value }))}
-                className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-          <button
-            onClick={() => citeMut.mutate({
-              sccversion_id: citeForm.sccversion_id,
-              period_from: citeForm.period_from,
-              period_to: citeForm.period_to,
-              kind: citeForm.kind,
-              issued_by: actorId,
-            })}
-            disabled={!citeForm.sccversion_id || !citeForm.period_from || !citeForm.period_to || citeMut.isPending}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
-          >
-            {citeMut.isPending ? "Generating…" : "Generate Citation"}
-          </button>
-
-          {citeError && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-              {citeError}
-            </div>
-          )}
-
-          {citeResult && (
-            <div className="bg-slate-50 border border-slate-200 rounded-md p-4">
-              <div className="text-xs font-medium text-slate-500 mb-1">Citation string</div>
-              <div className="font-mono text-sm text-slate-800 select-all">{citeResult.citation_string}</div>
-              <div className="mt-2 flex gap-6 text-xs text-slate-500">
-                <span>Uptime: <strong className={citeResult.target_met ? "text-green-700" : "text-red-600"}>{citeResult.uptime_pct.toFixed(2)}%</strong></span>
-                <span>Target met: <strong className={citeResult.target_met ? "text-green-700" : "text-red-600"}>{citeResult.target_met ? "Yes" : "No"}</strong></span>
-                <span>Issued by: {citeResult.issued_by}</span>
-              </div>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Existing citations for this SCC */}
-      {sccCitations.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-sm font-semibold text-slate-700">Issued Citations ({sccCitations.length})</h2>
-          </CardHeader>
-          <CardBody className="p-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Citation</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Period</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Uptime %</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Target Met</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Issued By</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Issued On</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sccCitations.map(c => (
-                  <tr key={c.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-600 max-w-xs truncate">{c.citation_string}</td>
-                    <td className="px-5 py-2.5 text-xs text-slate-500">{c.period_from} → {c.period_to}</td>
-                    <td className="px-5 py-2.5 text-xs font-medium">
-                      <span className={c.target_met ? "text-green-700" : "text-red-600"}>{c.uptime_pct.toFixed(2)}%</span>
-                    </td>
-                    <td className="px-5 py-2.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${c.target_met ? "bg-green-100 text-green-700 border-green-200" : "bg-red-100 text-red-700 border-red-200"}`}>
-                        {c.target_met ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{c.issued_by}</td>
-                    <td className="px-5 py-2.5 text-xs text-slate-400">{c.issued_on}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardBody>
-        </Card>
-      )}
     </div>
   );
 }

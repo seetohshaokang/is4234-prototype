@@ -129,6 +129,34 @@ POLICIES_SSO = [
     {"system": "billing-ftp",  "min_length": 0,  "complexity_required": False, "rotation_days": 180, "history_count": 2, "mfa_required": False, "sso": False},
 ]
 
+# All non-SSO systems fixed after remediation
+POLICIES_FIXED = [
+    {"system": s, "min_length": 12, "complexity_required": True, "rotation_days": 90,
+     "history_count": 5, "mfa_required": True, "sso": True}
+    for s in ["corp-ad", "vpn-gateway", "prod-db", "code-repo", "hr-portal",
+              "crm", "wiki", "jira", "monitoring", "analytics", "deploy-tools"]
+] + [
+    {"system": "billing-ftp", "min_length": 12, "complexity_required": True,
+     "rotation_days": 90, "history_count": 5, "mfa_required": False, "sso": False},
+]
+
+PIPELINES_FIXED = {
+    "horizon-core": [
+        {"name": "build",            "type": "build"},
+        {"name": "unit-tests",       "type": "test"},
+        {"name": "dependency-check", "type": "dependency_check"},
+        {"name": "security-scan",    "type": "security_scan"},
+        {"name": "release",          "type": "release"},
+    ],
+    "horizon-telemetry": [
+        {"name": "build",            "type": "build"},
+        {"name": "unit-tests",       "type": "test"},
+        {"name": "dependency-check", "type": "dependency_check"},
+        {"name": "security-scan",    "type": "security_scan"},
+        {"name": "release",          "type": "release"},
+    ],
+}
+
 PIPELINES = {
     "horizon-core": [
         {"name": "build",            "type": "build"},
@@ -174,16 +202,18 @@ def generate_snapshots() -> None:
     uptime = _build_uptime()
 
     specs = [
-        ("2017-12-01", _accounts(150, 0.72, 3, 0.41), POLICIES_BAD,  [],              [],              [],          {}),
-        ("2018-06-04", _accounts(180, 0.70, 3, 0.52), POLICIES_BAD,  *_vpn(40, 6, "2018-06-04"), [],  {}),
-        ("2018-09-03", _accounts(185, 0.70, 3, 0.55), POLICIES_SSO,  *_vpn(42, 5, "2018-09-03"), [],  {}),
-        ("2019-08-16", _accounts(220, 0.68, 2, 0.60), POLICIES_SSO,  *_vpn(55, 9, "2019-08-16"), [],  {}),
-        ("2019-11-19", _accounts(220, 0.68, 2, 0.60), POLICIES_SSO,  *_vpn(55, 9, "2019-11-19"), SECRET_FILE, {}),
-        ("2020-06-15", _accounts(240, 0.65, 2, 0.63), POLICIES_SSO,  *_vpn(60, 7, "2020-06-15"), SECRET_FILE, {}),
-        ("2020-10-14", _accounts(240, 0.65, 2, 0.63), POLICIES_SSO,  *_vpn(60, 7, "2020-10-14"), SECRET_FILE, {}),
+        ("2017-12-01", _accounts(150, 0.72, 3, 0.41), POLICIES_BAD,   [],              [],              [],          PIPELINES),
+        ("2018-06-04", _accounts(180, 0.70, 3, 0.52), POLICIES_BAD,   *_vpn(40, 6, "2018-06-04"), [],  PIPELINES),
+        ("2018-09-03", _accounts(185, 0.70, 3, 0.55), POLICIES_SSO,   *_vpn(42, 5, "2018-09-03"), [],  PIPELINES),
+        ("2019-08-16", _accounts(220, 0.68, 2, 0.60), POLICIES_SSO,   *_vpn(55, 9, "2019-08-16"), [],  PIPELINES),
+        ("2019-11-19", _accounts(220, 0.68, 2, 0.60), POLICIES_SSO,   *_vpn(55, 9, "2019-11-19"), SECRET_FILE, PIPELINES),
+        ("2020-06-15", _accounts(240, 0.65, 2, 0.63), POLICIES_SSO,   *_vpn(60, 7, "2020-06-15"), SECRET_FILE, PIPELINES),
+        ("2020-10-14", _accounts(240, 0.65, 2, 0.63), POLICIES_SSO,   *_vpn(60, 7, "2020-10-14"), SECRET_FILE, PIPELINES),
+        # Post-remediation: admin bloat fixed, MFA near-universal, pipelines fixed, secrets removed
+        ("2020-11-15", _accounts(240, 0.05, 0, 0.99), POLICIES_FIXED, *_vpn(60, 0, "2020-11-15"), [], PIPELINES_FIXED),
     ]
-    for d, accts, pols, vpn_l, vpn_d, secs, _ in specs:
-        _write_snapshot(d, accts, pols, vpn_l, vpn_d, PIPELINES, secs, uptime)
+    for d, accts, pols, vpn_l, vpn_d, secs, pipes in specs:
+        _write_snapshot(d, accts, pols, vpn_l, vpn_d, pipes, secs, uptime)
         print(f"  snapshot {d}: {len(accts)} accounts, {len(vpn_l)} VPN logins")
 
 

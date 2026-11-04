@@ -1,0 +1,12 @@
+pipeline: horizon-core
+steps:
+- name: build
+  type: build
+- name: unit-tests
+  type: test
+- name: dependency-check
+  type: dependency_check
+- name: security-scan
+  type: security_scan
+- name: release
+  type: release

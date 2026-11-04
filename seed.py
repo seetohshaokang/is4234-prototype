@@ -16,6 +16,7 @@ from db import (
     CheckDefinition, Collector, CollectorStatus,
     Control, SCC, SCCVersion, SCCVersionControl, SCCVersionStatus, EvidenceType,
     ManualEvidence, CheckpointApplied,
+    Finding, FindingStatus,
 )
 
 SNAP_DIR = Path("data/snapshots")
@@ -389,6 +390,29 @@ def seed_db() -> None:
         s.commit()
 
 
+def patch_case_statuses() -> None:
+    """Set a few cases to IN_REVIEW and RESOLVED for demo variety."""
+    from sqlmodel import select
+    from db import get_session
+    patches = {
+        "CASE_2017_002": FindingStatus.RESOLVED,
+        "CASE_2017_004": FindingStatus.RESOLVED,
+        "CASE_2018_005": FindingStatus.IN_REVIEW,
+        "CASE_2019_006": FindingStatus.IN_REVIEW,
+    }
+    with get_session() as s:
+        for fid, new_status in patches.items():
+            f = s.get(Finding, fid)
+            if f:
+                f.status = new_status
+                if new_status == FindingStatus.RESOLVED:
+                    pass  # keep existing closed_on
+                elif new_status == FindingStatus.IN_REVIEW:
+                    f.closed_on = None
+                s.add(f)
+        s.commit()
+
+
 def apply_all_checkpoints() -> None:
     """Apply CP1–CP9 so the DB starts fully populated."""
     from db import get_session
@@ -406,4 +430,6 @@ if __name__ == "__main__":
     seed_db()
     print("Applying checkpoints...")
     apply_all_checkpoints()
+    print("Patching case statuses...")
+    patch_case_statuses()
     print("Done. make backend && make frontend to start.")

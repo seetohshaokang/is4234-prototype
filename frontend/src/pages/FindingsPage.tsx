@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import api from "../api/client";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
@@ -19,7 +20,7 @@ interface Finding {
 }
 
 const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
-const STATUSES = ["OPEN", "CLOSED"];
+const STATUSES = ["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"];
 
 const SEVERITY_COLORS: Record<string, string> = {
   CRITICAL: "bg-red-100 text-red-800 border-red-200",
@@ -29,9 +30,12 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  OPEN:   "bg-red-100 text-red-700 border-red-200",
-  CLOSED: "bg-slate-100 text-slate-500 border-slate-200",
+  OPEN:      "bg-red-100 text-red-700 border-red-200",
+  IN_REVIEW: "bg-blue-100 text-blue-700 border-blue-200",
+  RESOLVED:  "bg-green-100 text-green-700 border-green-200",
+  CLOSED:    "bg-slate-100 text-slate-500 border-slate-200",
 };
+// mirrors Badge.tsx variants exactly so filter pills match the status column
 
 function SeverityBadge({ severity }: { severity: string }) {
   return (
@@ -77,8 +81,8 @@ export default function FindingsPage() {
     return true;
   });
 
-  const open = findings.filter(f => f.status === "OPEN");
-  const closed = findings.filter(f => f.status !== "OPEN");
+  const open = findings.filter(f => f.status === "OPEN" || f.status === "IN_REVIEW");
+  const closed = findings.filter(f => f.status === "RESOLVED" || f.status === "CLOSED");
 
   return (
     <div className="space-y-5">
@@ -141,11 +145,12 @@ export default function FindingsPage() {
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Source</th>
+                  <th className="px-5 py-2" />
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(f => {
-                  const isClosed = f.status !== "OPEN";
+                  const isClosed = f.status === "RESOLVED" || f.status === "CLOSED";
                   return (
                     <tr key={f.id} className={`border-b border-slate-50 last:border-0 ${isClosed ? "opacity-50" : "hover:bg-slate-50"}`}>
                       <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{f.id}</td>
@@ -161,6 +166,14 @@ export default function FindingsPage() {
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.opened_on}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.closed_on ?? "—"}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.source}</td>
+                      <td className="px-5 py-2.5 text-right">
+                        <Link
+                          to={`/findings/${f.id}`}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          View details →
+                        </Link>
+                      </td>
                     </tr>
                   );
                 })}

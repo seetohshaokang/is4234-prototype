@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from db import (
     get_session, create_tables,
-    Control, Finding, FindingStatus,
+    Control, Finding, FindingStatus, CaseNote,
     CheckDefinition, Collector, CollectorStatus,
     SCC, SCCVersion, SCCVersionStatus, SCCVersionControl,
     StateInterval, SCCState,
@@ -75,6 +75,15 @@ class ApproveChangeRequestBody(BaseModel):
 
 class RejectBody(BaseModel):
     auditor_note: str
+
+
+class CaseStatusUpdate(BaseModel):
+    status: str
+
+
+class CaseNoteCreate(BaseModel):
+    body: str
+    author_id: str
 
 
 class CollectorSubmitBody(BaseModel):
@@ -401,7 +410,7 @@ def list_findings(status: Optional[str] = None):
         q = select(Finding)
         if status:
             q = q.where(Finding.status == status)
-        findings = list(session.exec(q.order_by(Finding.opened_on.desc())).all())  # type: ignore[attr-defined]
+        findings = list(session.exec(q.order_by(Finding.opened_on.desc(), Finding.id.asc())).all())  # type: ignore[attr-defined]
         control_map = {c.id: c for c in session.exec(select(Control)).all()}
         return [{"id": f.id, "control_id": f.control_id,
                  "check_id": control_map[f.control_id].check_id if f.control_id in control_map else None,
@@ -412,6 +421,84 @@ def list_findings(status: Optional[str] = None):
                  "source": f.source, "title": f.title, "description": f.description,
                  "root_cause_note": f.root_cause_note}
                 for f in findings]
+
+
+@app.get("/findings/{finding_id}")
+def get_finding(finding_id: str):
+    with get_session() as session:
+        as_of = get_clock(session)
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        return {
+            "id": f.id, "control_id": f.control_id,
+            "check_id": control_map[f.control_id].check_id if f.control_id in control_map else None,
+            "severity": str(f.severity), "status": str(f.status),
+            "opened_on": str(f.opened_on),
+            "closed_on": str(f.closed_on) if f.closed_on else None,
+            "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
+            "source": f.source, "title": f.title, "description": f.description,
+            "root_cause_note": f.root_cause_note,
+        }
+
+
+VALID_TRANSITIONS: dict[str, list[str]] = {
+    "OPEN":      ["IN_REVIEW"],
+    "IN_REVIEW": ["RESOLVED", "CLOSED"],
+    "RESOLVED":  [],
+    "CLOSED":    [],
+}
+
+@app.patch("/findings/{finding_id}/status")
+def update_finding_status(finding_id: str, body: CaseStatusUpdate):
+    with get_session() as session:
+        as_of = get_clock(session)
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        allowed = VALID_TRANSITIONS.get(str(f.status), [])
+        if body.status not in allowed:
+            raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
+        f.status = FindingStatus(body.status)
+        if body.status in ("RESOLVED", "CLOSED"):
+            f.closed_on = as_of
+        session.add(f)
+        session.commit()
+        return {"ok": True, "status": body.status}
+
+
+@app.get("/findings/{finding_id}/notes")
+def list_case_notes(finding_id: str):
+    with get_session() as session:
+        notes = list(session.exec(
+            select(CaseNote)
+            .where(CaseNote.finding_id == finding_id)
+            .order_by(CaseNote.created_on.asc())  # type: ignore[attr-defined]
+        ).all())
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
+        return [
+            {
+                "id": n.id, "author_id": n.author_id,
+                "author_name": person_map[n.author_id].name if n.author_id in person_map else n.author_id,
+                "created_on": str(n.created_on), "body": n.body,
+            }
+            for n in notes
+        ]
+
+
+@app.post("/findings/{finding_id}/notes")
+def add_case_note(finding_id: str, body: CaseNoteCreate):
+    with get_session() as session:
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        as_of = get_clock(session)
+        note = CaseNote(finding_id=finding_id, author_id=body.author_id, created_on=as_of, body=body.body)
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        return {"id": note.id, "author_id": note.author_id, "created_on": str(note.created_on), "body": note.body}
 
 
 # ── Escalations ───────────────────────────────────────────────────────────────

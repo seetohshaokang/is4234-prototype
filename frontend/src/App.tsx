@@ -4,6 +4,7 @@ import SCCLibrary from "./pages/ClaimRegistry";
 import ChecksCollectors from "./pages/ControlTests";
 import ChangeRequests from "./pages/GateReview";
 import FindingsPage from "./pages/FindingsPage";
+import CaseDetail from "./pages/CaseDetail";
 import EscalationsPage from "./pages/EscalationsPage";
 import AuditTrail from "./pages/AuditTrail";
 import AboutPage from "./pages/AboutPage";
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/checks" element={<ChecksCollectors />} />
         <Route path="/changes" element={<ChangeRequests />} />
         <Route path="/findings" element={<FindingsPage />} />
+        <Route path="/findings/:id" element={<CaseDetail />} />
         <Route path="/escalations" element={<EscalationsPage />} />
         <Route path="/audit" element={<AuditTrail />} />
         <Route path="/about" element={<AboutPage />} />

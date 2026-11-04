@@ -87,8 +87,10 @@ class FindingSeverity(StrEnum):
 
 
 class FindingStatus(StrEnum):
-    OPEN   = "OPEN"
-    CLOSED = "CLOSED"
+    OPEN      = "OPEN"
+    IN_REVIEW = "IN_REVIEW"
+    RESOLVED  = "RESOLVED"
+    CLOSED    = "CLOSED"
 
 
 class EscalationStatus(StrEnum):
@@ -244,6 +246,15 @@ class Finding(SQLModel, table=True):
     source: str = "automated_check"
     title: str = ""
     description: str = ""
+
+
+class CaseNote(SQLModel, table=True):
+    __tablename__ = "casenote"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    finding_id: str = Field(foreign_key="finding.id")
+    author_id: str = Field(foreign_key="person.id")
+    created_on: date
+    body: str
 
 
 class ChangeRequest(SQLModel, table=True):

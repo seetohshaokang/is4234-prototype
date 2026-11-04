@@ -7,6 +7,7 @@ import Card, { CardHeader, CardBody } from "../components/Card";
 interface Finding {
   id: string;
   control_id: string;
+  check_id: string | null;
   severity: string;
   status: string;
   opened_on: string;
@@ -132,7 +133,7 @@ export default function FindingsPage() {
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">ID</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Control</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Title</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
@@ -148,7 +149,7 @@ export default function FindingsPage() {
                   return (
                     <tr key={f.id} className={`border-b border-slate-50 last:border-0 ${isClosed ? "opacity-50" : "hover:bg-slate-50"}`}>
                       <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{f.id}</td>
-                      <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{f.control_id}</td>
+                      <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{f.check_id ?? f.control_id}</td>
                       <td className="px-5 py-2.5 text-slate-700 font-medium">{f.title}</td>
                       <td className="px-5 py-2.5"><SeverityBadge severity={f.severity} /></td>
                       <td className="px-5 py-2.5"><Badge value={f.status} /></td>

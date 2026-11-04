@@ -402,7 +402,10 @@ def list_findings(status: Optional[str] = None):
         if status:
             q = q.where(Finding.status == status)
         findings = list(session.exec(q.order_by(Finding.opened_on.desc())).all())  # type: ignore[attr-defined]
-        return [{"id": f.id, "control_id": f.control_id, "severity": str(f.severity),
+        control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        return [{"id": f.id, "control_id": f.control_id,
+                 "check_id": control_map[f.control_id].check_id if f.control_id in control_map else None,
+                 "severity": str(f.severity),
                  "status": str(f.status), "opened_on": str(f.opened_on),
                  "closed_on": str(f.closed_on) if f.closed_on else None,
                  "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,

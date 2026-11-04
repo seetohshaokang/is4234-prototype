@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from db import (
     get_session, create_tables,
-    Control, Finding, FindingStatus, CaseNote,
+    Control, Finding, FindingStatus, CaseNote, ChangeRequestNote,
     CheckDefinition, Collector, CollectorStatus,
     SCC, SCCVersion, SCCVersionStatus, SCCVersionControl,
     StateInterval, SCCState,
@@ -92,6 +92,11 @@ class CaseLevelUpdate(BaseModel):
 
 class CaseAssign(BaseModel):
     person_id: str
+
+
+class CRNoteCreate(BaseModel):
+    body: str
+    author_id: str
 
 
 class CollectorSubmitBody(BaseModel):
@@ -409,6 +414,42 @@ def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P
             raise HTTPException(403, str(e))
 
 
+@app.get("/change-requests/{cr_id}/notes")
+def list_cr_notes(cr_id: str):
+    with get_session() as session:
+        notes = list(session.exec(
+            select(ChangeRequestNote)
+            .where(ChangeRequestNote.cr_id == cr_id)
+            .order_by(ChangeRequestNote.created_on.asc())  # type: ignore[attr-defined]
+        ).all())
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
+        return [
+            {
+                "id": n.id, "author_id": n.author_id,
+                "author_name": person_map[n.author_id].name if n.author_id in person_map else n.author_id,
+                "created_on": str(n.created_on), "body": n.body,
+            }
+            for n in notes
+        ]
+
+
+@app.post("/change-requests/{cr_id}/notes")
+def add_cr_note(cr_id: str, body: CRNoteCreate):
+    with get_session() as session:
+        cr = session.get(ChangeRequest, cr_id)
+        if not cr:
+            raise HTTPException(status_code=404, detail="Change request not found")
+        as_of = get_clock(session)
+        note = ChangeRequestNote(cr_id=cr_id, author_id=body.author_id, created_on=as_of, body=body.body)
+        session.add(note)
+        session.commit()
+        session.refresh(note)
+        person = session.get(Person, body.author_id)
+        return {"id": note.id, "author_id": note.author_id,
+                "author_name": person.name if person else note.author_id,
+                "created_on": str(note.created_on), "body": note.body}
+
+
 # ── Findings ──────────────────────────────────────────────────────────────────
 
 @app.get("/findings")
@@ -560,6 +601,7 @@ def list_escalations():
         ).all())
         finding_map = {f.id: f for f in session.exec(select(Finding)).all()}
         control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
         result = []
         for e in escs:
             responses = list(session.exec(
@@ -567,14 +609,19 @@ def list_escalations():
             ).all())
             f = finding_map.get(e.finding_id)
             check_id = control_map[f.control_id].check_id if f and f.control_id in control_map else None
+            assigned_name = person_map[f.assigned_to_id].name if f and f.assigned_to_id and f.assigned_to_id in person_map else None
+            days_open = (as_of - f.opened_on).days if f and f.status == FindingStatus.OPEN else None
             result.append({
                 "id": e.id,
                 "finding_id": e.finding_id,
                 "finding_title": f.title if f else None,
+                "finding_status": str(f.status) if f else None,
                 "check_id": check_id,
                 "level": e.level,
                 "assigned_to_role": str(e.assigned_to_role),
+                "assigned_to_name": assigned_name,
                 "reason": e.reason,
+                "days_open": days_open,
                 "created_on": str(e.created_on),
                 "acknowledged_on": str(e.acknowledged_on) if e.acknowledged_on else None,
                 "resolved_on": str(e.resolved_on) if e.resolved_on else None,

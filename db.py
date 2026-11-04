@@ -259,6 +259,15 @@ class CaseNote(SQLModel, table=True):
     body: str
 
 
+class ChangeRequestNote(SQLModel, table=True):
+    __tablename__ = "changerequestnote"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cr_id: str = Field(foreign_key="changerequest.id")
+    author_id: str = Field(foreign_key="person.id")
+    created_on: date
+    body: str
+
+
 class ChangeRequest(SQLModel, table=True):
     __tablename__ = "changerequest"
     id: str = Field(primary_key=True)

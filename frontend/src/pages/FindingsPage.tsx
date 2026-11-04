@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import api from "../api/client";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
+import CasePanel from "../components/CasePanel";
 
 interface Finding {
   id: string;
@@ -63,6 +63,7 @@ function FilterPill({
 export default function FindingsPage() {
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: findings = [], isLoading } = useQuery<Finding[]>({
     queryKey: ["findings"],
@@ -179,12 +180,12 @@ export default function FindingsPage() {
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.closed_on ?? "—"}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.source}</td>
                       <td className="px-5 py-2.5 text-right">
-                        <Link
-                          to={`/findings/${f.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        <button
+                          onClick={() => setSelectedId(f.id)}
+                          className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-3 py-1.5 transition-colors whitespace-nowrap"
                         >
-                          View details →
-                        </Link>
+                          View details
+                        </button>
                       </td>
                     </tr>
                   );
@@ -194,6 +195,10 @@ export default function FindingsPage() {
           )}
         </CardBody>
       </Card>
+
+      {selectedId && (
+        <CasePanel id={selectedId} onClose={() => setSelectedId(null)} />
+      )}
     </div>
   );
 }

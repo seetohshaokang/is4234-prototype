@@ -124,6 +124,11 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
     },
   });
 
+  const ackMut = useMutation({
+    mutationFn: (escId: number) => api.post(`/escalations/${escId}/ack`, null, { params: { actor_id: actorId } }),
+    onSuccess: invalidate,
+  });
+
   const isActive = finding?.status === "OPEN" || finding?.status === "IN_REVIEW";
   const nextLevel = finding?.level != null && finding.level < 3 ? finding.level + 1 : null;
   const escalateAllowed: Record<number, string> = { 2: "control_owner", 3: "security_lead" };
@@ -279,6 +284,15 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
                         <div className="text-xs text-slate-500">{row.action}</div>
                       </div>
                       {esc && <Badge value={esc.status} />}
+                      {esc && esc.status === "OPEN" && isCurrentLevel && (
+                        <button
+                          onClick={() => ackMut.mutate(esc.id)}
+                          disabled={ackMut.isPending}
+                          className="text-xs border border-slate-300 hover:border-slate-500 text-slate-500 hover:text-slate-700 rounded px-2 py-0.5 disabled:opacity-50 transition-colors flex-shrink-0"
+                        >
+                          Acknowledge
+                        </button>
+                      )}
                     </div>
                   );
                 })}

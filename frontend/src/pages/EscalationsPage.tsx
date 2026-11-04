@@ -1,18 +1,9 @@
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import api from "../api/client";
-import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
-
-interface EscalationResponse {
-  decision: string;
-  rationale: string;
-  due_on: string | null;
-  decided_by: string;
-  decided_on: string;
-}
+import CasePanel from "../components/CasePanel";
 
 interface Escalation {
   id: number;
@@ -29,15 +20,7 @@ interface Escalation {
   acknowledged_on: string | null;
   resolved_on: string | null;
   status: string;
-  responses: EscalationResponse[];
 }
-
-const DECISIONS = [
-  { value: "REMEDIATE",            label: "REMEDIATE — Fix the underlying issue" },
-  { value: "STOP_CITING",          label: "STOP_CITING — Withdraw the SCC from use" },
-  { value: "REQUEST_REEVALUATION", label: "REQUEST_REEVALUATION — Ask auditor to re-examine" },
-  { value: "DISCLOSE",             label: "DISCLOSE — Publicly disclose the downtime" },
-];
 
 function LevelBadge({ level }: { level: number }) {
   const cls = level === 3
@@ -50,25 +33,7 @@ function LevelBadge({ level }: { level: number }) {
   );
 }
 
-function EscalationTable({
-  escalations,
-  onRespond,
-  respondFor,
-  dimmed,
-}: {
-  escalations: Escalation[];
-  onRespond?: (id: number) => void;
-  respondFor?: number | null;
-  dimmed?: boolean;
-}) {
-  const { actorId } = useAppStore();
-  const qc = useQueryClient();
-
-  const ackMut = useMutation({
-    mutationFn: (id: number) => api.post(`/escalations/${id}/ack`, null, { params: { actor_id: actorId } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["escalations"] }),
-  });
-
+function EscalationTable({ escalations, dimmed, onSelect }: { escalations: Escalation[]; dimmed?: boolean; onSelect?: (id: string) => void }) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -80,7 +45,7 @@ function EscalationTable({
           <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Reason for Escalation</th>
           <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Days Open</th>
           <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Esc. Status</th>
-          {!dimmed && <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Actions</th>}
+          {!dimmed && <th className="text-left px-5 py-2 text-xs font-medium text-slate-500"></th>}
         </tr>
       </thead>
       <tbody>
@@ -106,33 +71,12 @@ function EscalationTable({
             <td className="px-5 py-2.5"><Badge value={e.status} /></td>
             {!dimmed && (
               <td className="px-5 py-2.5">
-                <div className="flex flex-col gap-1.5 items-start">
-                  <Link
-                    to={`/findings/${e.finding_id}`}
-                    className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                  >
-                    View case →
-                  </Link>
-                  <div className="flex gap-1.5">
-                    {e.status === "OPEN" && (
-                      <button
-                        onClick={() => ackMut.mutate(e.id)}
-                        disabled={ackMut.isPending}
-                        className="text-xs border border-slate-200 hover:border-slate-400 text-slate-500 hover:text-slate-700 rounded px-2 py-0.5 disabled:opacity-50 transition-colors"
-                      >
-                        Acknowledge
-                      </button>
-                    )}
-                    {e.level === 3 && onRespond && (
-                      <button
-                        onClick={() => onRespond(e.id)}
-                        className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded px-2 py-0.5 transition-colors"
-                      >
-                        Respond
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <button
+                  onClick={() => onSelect?.(e.finding_id)}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  View case →
+                </button>
               </td>
             )}
           </tr>
@@ -143,27 +87,11 @@ function EscalationTable({
 }
 
 export default function EscalationsPage() {
-  const { actorId } = useAppStore();
-  const qc = useQueryClient();
-  const [respondFor, setRespondFor] = useState<number | null>(null);
-  const [form, setForm] = useState({ decision: "REMEDIATE", rationale: "", due_on: "" });
-  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: escalations = [], isLoading } = useQuery<Escalation[]>({
     queryKey: ["escalations"],
     queryFn: () => api.get("/escalations").then(r => r.data),
-  });
-
-  const respondMut = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: object }) =>
-      api.post(`/escalations/${id}/respond`, payload, { params: { actor_id: actorId } }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["escalations"] });
-      setRespondFor(null);
-      setForm({ decision: "REMEDIATE", rationale: "", due_on: "" });
-      setError("");
-    },
-    onError: (e: any) => setError(e.response?.data?.detail ?? "Respond failed"),
   });
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
@@ -179,15 +107,9 @@ export default function EscalationsPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Escalations</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Cases escalated for senior review. L3 escalations require a formal committee decision.
+          Cases escalated for senior review. Open a case to acknowledge or add notes.
         </p>
       </div>
-
-      {error && (
-        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
-          {error}
-        </div>
-      )}
 
       {/* L3 — Disclosure Committee */}
       {l3Open.length > 0 && (
@@ -200,72 +122,7 @@ export default function EscalationsPage() {
             </div>
           </CardHeader>
           <CardBody className="p-0">
-            <EscalationTable
-              escalations={l3Open}
-              onRespond={id => setRespondFor(respondFor === id ? null : id)}
-              respondFor={respondFor}
-            />
-            {respondFor !== null && l3Open.some(e => e.id === respondFor) && (
-              <div className="border-t border-slate-100 px-5 py-4 bg-purple-50">
-                <div className="text-sm font-semibold text-slate-700 mb-3">
-                  Formal Response to Escalation #{respondFor}
-                </div>
-                <div className="space-y-3 max-w-xl">
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Decision</label>
-                    <select
-                      value={form.decision}
-                      onChange={e => setForm(f => ({ ...f, decision: e.target.value }))}
-                      className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-                    >
-                      {DECISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Rationale <span className="text-slate-400">(min 50 chars)</span>
-                    </label>
-                    <textarea
-                      value={form.rationale}
-                      onChange={e => setForm(f => ({ ...f, rationale: e.target.value }))}
-                      rows={3}
-                      className="w-full text-sm border border-slate-300 rounded-md px-3 py-2 focus:outline-none focus:border-blue-500"
-                      placeholder="Explain the basis for this decision…"
-                    />
-                    {form.rationale.length > 0 && form.rationale.length < 50 && (
-                      <div className="text-xs text-amber-600 mt-1">{50 - form.rationale.length} more characters required</div>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Due On</label>
-                    <input
-                      type="date"
-                      value={form.due_on}
-                      onChange={e => setForm(f => ({ ...f, due_on: e.target.value }))}
-                      className="text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => respondMut.mutate({
-                        id: respondFor,
-                        payload: { decision: form.decision, rationale: form.rationale, due_on: form.due_on || undefined },
-                      })}
-                      disabled={form.rationale.length < 50 || respondMut.isPending}
-                      className="bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
-                    >
-                      {respondMut.isPending ? "Submitting…" : "Submit Response"}
-                    </button>
-                    <button
-                      onClick={() => setRespondFor(null)}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-md transition-colors"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <EscalationTable escalations={l3Open} onSelect={setSelectedId} />
           </CardBody>
         </Card>
       )}
@@ -281,7 +138,7 @@ export default function EscalationsPage() {
             </div>
           </CardHeader>
           <CardBody className="p-0">
-            <EscalationTable escalations={l2Open} />
+            <EscalationTable escalations={l2Open} onSelect={setSelectedId} />
           </CardBody>
         </Card>
       )}
@@ -305,6 +162,7 @@ export default function EscalationsPage() {
           </CardBody>
         </Card>
       )}
+      {selectedId && <CasePanel id={selectedId} onClose={() => setSelectedId(null)} />}
     </div>
   );
 }

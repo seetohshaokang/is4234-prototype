@@ -227,11 +227,11 @@ def seed_db() -> None:
     with Session(engine) as s:
         # People
         people = [
-            Person(id="P-PRIYA",   name="Control Owner",         role=Role.CONTROL_OWNER,        title="IT Ops Engineer"),
-            Person(id="P-GRANT",   name="Security Lead",         role=Role.SECURITY_LEAD,         title="VP Security"),
-            Person(id="P-OKAFOR",  name="Disclosure Committee",  role=Role.DISCLOSURE_COMMITTEE,  title="CFO"),
-            Person(id="P-REYES",   name="Meridian Assurance Group", role=Role.INDEPENDENT_AUDITOR, title="Meridian Assurance Group"),
-            Person(id="P-MORALES", name="Audit Committee",       role=Role.AUDIT_COMMITTEE,       title="Audit Committee Chair"),
+            Person(id="P-PRIYA",   name="Priya Nair",      role=Role.CONTROL_OWNER,        title="IT Ops Engineer"),
+            Person(id="P-GRANT",   name="Marcus Tan",      role=Role.SECURITY_LEAD,        title="VP Security"),
+            Person(id="P-OKAFOR",  name="Rachel Lim",      role=Role.DISCLOSURE_COMMITTEE, title="CFO"),
+            Person(id="P-REYES",   name="David Ng",        role=Role.INDEPENDENT_AUDITOR,  title="External Auditor"),
+            Person(id="P-MORALES", name="Sharon Wong",     role=Role.AUDIT_COMMITTEE,      title="Audit Committee Chair"),
         ]
         for p in people:
             s.add(p)

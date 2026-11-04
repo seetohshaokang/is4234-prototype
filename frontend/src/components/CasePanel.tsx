@@ -109,7 +109,7 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
   });
 
   const assignMut = useMutation({
-    mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }),
+    mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }, { params: { actor_id: actorId } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["finding", id] });
       qc.invalidateQueries({ queryKey: ["findings"] });

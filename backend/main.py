@@ -552,7 +552,7 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: str =
 
 
 @app.patch("/findings/{finding_id}/assign")
-def assign_finding(finding_id: str, body: CaseAssign):
+def assign_finding(finding_id: str, body: CaseAssign, actor_id: str = "SYSTEM"):
     with get_session() as session:
         f = session.get(Finding, finding_id)
         if not f:
@@ -564,7 +564,7 @@ def assign_finding(finding_id: str, body: CaseAssign):
         session.add(f)
         session.flush()
         as_of = get_clock(session)
-        append_event(session, as_of, "SYSTEM", "case_assigned",
+        append_event(session, as_of, _actor(actor_id), "case_assigned",
                      "finding", finding_id,
                      {"assigned_to": body.person_id, "name": person.name})
         session.commit()

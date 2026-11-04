@@ -94,7 +94,7 @@ function CaseDetailInline({ id }: { id: string }) {
 
   const statusMut = useMutation({ mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }, { params: { actor_id: actorId } }), onSuccess: invalidate });
   const levelMut  = useMutation({ mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }, { params: { actor_id: actorId } }), onSuccess: invalidate });
-  const assignMut = useMutation({ mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["finding", id] }); qc.invalidateQueries({ queryKey: ["findings"] }); } });
+  const assignMut = useMutation({ mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }, { params: { actor_id: actorId } }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["finding", id] }); qc.invalidateQueries({ queryKey: ["findings"] }); } });
   const noteMut   = useMutation({ mutationFn: (body: string) => api.post(`/findings/${id}/notes`, { body, author_id: actorId }), onSuccess: () => { setNoteBody(""); qc.invalidateQueries({ queryKey: ["case-notes", id] }); } });
 
   if (isLoading || !finding) return <div className="text-slate-400 text-sm">Loading…</div>;

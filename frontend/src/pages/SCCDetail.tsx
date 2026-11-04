@@ -253,11 +253,12 @@ export default function SCCDetail() {
   const [deprecateReason, setDeprecateReason] = useState("");
   const [formError, setFormError] = useState("");
 
-  const { data: personas = [] } = useQuery<{ id: string; role: string }[]>({
+  const { data: personas = [] } = useQuery<{ id: string; name: string; role: string }[]>({
     queryKey: ["personas"],
     queryFn: () => api.get("/personas").then(r => r.data),
   });
   const isAuditor = personas.find(p => p.id === actorId)?.role === "independent_auditor";
+  const personaName = (id: string) => personas.find(p => p.id === id)?.name ?? id;
 
   const { data: scc, isLoading, error } = useQuery<SCCDetail>({
     queryKey: ["scc", id],
@@ -323,7 +324,7 @@ export default function SCCDetail() {
               <ChevronRight size={14} className="text-slate-300" />
               <h1 className="text-2xl font-bold text-slate-900">{scc.title}</h1>
             </div>
-            <p className="text-sm text-slate-500 mt-0.5">Owner: {scc.owner_id}</p>
+            <p className="text-sm text-slate-500 mt-0.5">Owner: {personaName(scc.owner_id)}</p>
           </div>
         </div>
         {isAuditor && activeVersion && (

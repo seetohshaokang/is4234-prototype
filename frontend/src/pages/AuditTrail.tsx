@@ -31,8 +31,11 @@ const ACTION_LABELS: Record<string, string> = {
   change_request_approved:    "Change request approved",
   change_request_rejected:    "Change request rejected",
   cr_note_added:              "Change request note added",
+  scc_created:                "SCC created",
+  scc_revised:                "SCC revised",
   scc_deprecated:             "SCC deprecated",
   scc_version_activated:      "SCC version activated",
+  escalation_created:         "Escalation opened",
   checkpoint_applied:         "Checkpoint applied",
   clock_set:                  "Simulation clock set",
   collector_submitted:        "Collector submitted",
@@ -53,7 +56,10 @@ const ACTION_COLORS: Record<string, string> = {
   change_request_approved:    "text-emerald-600",
   change_request_rejected:    "text-red-600",
   cr_note_added:              "text-slate-600",
+  scc_created:                "text-emerald-600",
+  scc_revised:                "text-amber-600",
   scc_deprecated:             "text-orange-600",
+  escalation_created:         "text-purple-600",
   checkpoint_applied:         "text-slate-400",
   check_run:                  "text-slate-400",
   clock_set:                  "text-slate-400",
@@ -66,7 +72,7 @@ const FILTER_GROUPS = [
   },
   {
     label: "Escalations",
-    actions: ["escalation_acked", "escalation_resolved", "committee_response"],
+    actions: ["escalation_created", "escalation_acked", "escalation_resolved", "committee_response"],
   },
   {
     label: "Change Requests",
@@ -78,7 +84,7 @@ const FILTER_GROUPS = [
   },
   {
     label: "System",
-    actions: ["checkpoint_applied", "clock_set", "scc_deprecated", "collector_submitted", "collector_approved"],
+    actions: ["checkpoint_applied", "clock_set", "scc_created", "scc_revised", "scc_deprecated", "collector_submitted", "collector_approved"],
   },
 ];
 

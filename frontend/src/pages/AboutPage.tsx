@@ -68,17 +68,6 @@ export default function AboutPage() {
           </div>
 
           <div>
-            <h2 className="text-base font-semibold text-slate-800 mb-2">The Resolver</h2>
-            <p className="text-sm text-slate-600">
-              The <strong>Resolver</strong> lets anyone paste a citation string from a press release,
-              securities filing, or marketing material, and verify it against the internal records.
-              If the claimed uptime percentage matches the computed figure from the raw data, the
-              citation is confirmed. If it differs, the mismatch is flagged — making it impossible
-              to silently inflate security performance claims.
-            </p>
-          </div>
-
-          <div>
             <h2 className="text-base font-semibold text-slate-800 mb-2">Escalation Ladder</h2>
             <p className="text-sm text-slate-600">
               When an SCC stays DOWN, escalations fire automatically:
@@ -93,10 +82,10 @@ export default function AboutPage() {
               </thead>
               <tbody className="text-xs text-slate-600">
                 {[
-                  ["L1", "Control Owner (IT Ops)", "Acknowledge and begin remediation"],
-                  ["L2", "Security Lead (VP Security)", "Review and escalate if needed"],
-                  ["L3", "Disclosure Committee (CFO)", "Formal decision: REMEDIATE / STOP_CITING / REQUEST_REEVALUATION / DISCLOSE"],
-                  ["L4", "Audit Committee Chair", "Override or confirm L3 decision"],
+                  ["L1", "Control Owner", "Acknowledge and begin remediation"],
+                  ["L2", "Security Lead", "Review and escalate if needed"],
+                  ["L3", "Disclosure Committee", "Formal decision: REMEDIATE / STOP_CITING / REQUEST_REEVALUATION / DISCLOSE"],
+                  ["L4", "Audit Committee", "Override or confirm L3 decision"],
                 ].map(([level, role, action]) => (
                   <tr key={level} className="border-b border-slate-100">
                     <td className="py-2 pr-4 font-semibold text-purple-600">{level}</td>
@@ -109,13 +98,13 @@ export default function AboutPage() {
           </div>
 
           <div>
-            <h2 className="text-base font-semibold text-slate-800 mb-2">The NimbusWatch Case Study</h2>
+            <h2 className="text-base font-semibold text-slate-800 mb-2">The SolarWinds Case Study</h2>
             <p className="text-sm text-slate-600">
-              This prototype walks through the fictional company <strong>NimbusWatch Inc.</strong>
-              from December 2017 to December 2020, modelled on the governance failure patterns
-              identified in the SolarWinds breach disclosure case. Use the checkpoint buttons in
-              the sidebar to advance the timeline and observe how the SCC Library would have
-              surfaced the growing gap between security claims and evidence.
+              This prototype walks through <strong>SolarWinds</strong> from December 2017 to
+              December 2020, modelled on the governance failure patterns identified in the SolarWinds
+              breach disclosure case. The data covers that company's security posture timeline and
+              shows how the SCC Library would have surfaced the growing gap between security claims
+              and evidence — audited by <strong>Meridian Assurance Group</strong>.
             </p>
           </div>
 

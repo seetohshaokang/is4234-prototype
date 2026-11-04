@@ -324,7 +324,6 @@ export default function SCCDetail() {
               <ChevronRight size={14} className="text-slate-300" />
               <h1 className="text-2xl font-bold text-slate-900">{scc.title}</h1>
             </div>
-            <p className="text-sm text-slate-500 mt-0.5">Owner: {personaName(scc.owner_id)}</p>
           </div>
         </div>
         {isAuditor && activeVersion && (

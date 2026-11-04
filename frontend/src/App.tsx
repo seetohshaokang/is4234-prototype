@@ -1,6 +1,5 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import AppShell from "./components/AppShell";
-import Dashboard from "./pages/Dashboard";
 import SCCLibrary from "./pages/ClaimRegistry";
 import ChecksCollectors from "./pages/ControlTests";
 import ChangeRequests from "./pages/GateReview";
@@ -15,7 +14,7 @@ export default function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to="/sccs" replace />} />
         <Route path="/sccs" element={<SCCLibrary />} />
         <Route path="/sccs/:id" element={<SCCDetail />} />
         <Route path="/checks" element={<ChecksCollectors />} />

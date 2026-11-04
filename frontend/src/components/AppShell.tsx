@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Library, LayoutDashboard, FlaskConical,
+  Library, FlaskConical,
   AlertTriangle, GitBranch, BookOpen, Info,
   CalendarDays, CircleHelp, GitPullRequest, Search, RotateCcw,
 } from "lucide-react";
@@ -19,7 +19,6 @@ const NAV_PUBLIC = [
 ];
 
 const NAV_INTERNAL = [
-  { to: "/",            icon: LayoutDashboard, label: "Dashboard" },
   { to: "/sccs",        icon: Library,         label: "SCC Library" },
   { to: "/checks",      icon: FlaskConical,    label: "Checks & Collectors" },
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },

@@ -8,7 +8,6 @@ import EscalationsPage from "./pages/EscalationsPage";
 import AuditTrail from "./pages/AuditTrail";
 import AboutPage from "./pages/AboutPage";
 import SCCDetail from "./pages/SCCDetail";
-import Resolver from "./pages/Resolver";
 
 export default function App() {
   return (
@@ -21,7 +20,6 @@ export default function App() {
         <Route path="/changes" element={<ChangeRequests />} />
         <Route path="/findings" element={<FindingsPage />} />
         <Route path="/escalations" element={<EscalationsPage />} />
-        <Route path="/resolver" element={<Resolver />} />
         <Route path="/audit" element={<AuditTrail />} />
         <Route path="/about" element={<AboutPage />} />
       </Routes>

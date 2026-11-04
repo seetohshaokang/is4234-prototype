@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Library, FlaskConical,
   AlertTriangle, GitBranch, BookOpen, Info,
-  CircleHelp, GitPullRequest, Search,
+  CircleHelp, GitPullRequest,
 } from "lucide-react";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
@@ -24,7 +24,6 @@ const NAV_INTERNAL = [
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },
   { to: "/findings",    icon: AlertTriangle,   label: "Findings" },
   { to: "/escalations", icon: GitBranch,       label: "Escalations" },
-  { to: "/resolver",    icon: Search,          label: "Resolver" },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail" },
   { to: "/about",       icon: Info,            label: "About" },
 ];

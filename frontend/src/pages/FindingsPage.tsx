@@ -15,6 +15,7 @@ interface Finding {
   closed_on: string | null;
   days_open: number | null;
   level: number | null;
+  assigned_to_name: string | null;
   source: string;
   title: string;
   description: string;
@@ -143,6 +144,7 @@ export default function FindingsPage() {
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned To</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Days Open</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed On</th>
@@ -167,6 +169,7 @@ export default function FindingsPage() {
                           </span>
                         ) : <span className="text-xs text-slate-300">—</span>}
                       </td>
+                      <td className="px-5 py-2.5 text-xs text-slate-500">{f.assigned_to_name ?? <span className="text-slate-300">—</span>}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-500">
                         {f.days_open != null ? (
                           <span className={f.days_open > 60 ? "text-red-600 font-medium" : ""}>{f.days_open}d</span>

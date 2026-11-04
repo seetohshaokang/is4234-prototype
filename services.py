@@ -351,6 +351,12 @@ LEVEL_REASONS = {
     3: "Escalated to disclosure committee for formal decision",
 }
 
+# Who is allowed to trigger the escalation TO each level
+ESCALATE_TO_LEVEL_ALLOWED = {
+    2: Role.CONTROL_OWNER,   # control owner escalates L1 → L2
+    3: Role.SECURITY_LEAD,   # security lead escalates L2 → L3
+}
+
 
 def escalate_case(session: Session, finding_id: str, level: int, actor_id: str) -> Escalation:
     as_of = get_clock(session)
@@ -359,6 +365,12 @@ def escalate_case(session: Session, finding_id: str, level: int, actor_id: str) 
         raise ValueError(f"Case {finding_id} not found")
     if level not in LEVEL_ROLES:
         raise ValueError("Level must be 1, 2, or 3")
+    # Enforce who can trigger manual escalations (L1 is auto, L2/L3 are role-gated)
+    if level in ESCALATE_TO_LEVEL_ALLOWED and actor_id != "SYSTEM":
+        actor = session.get(Person, actor_id)
+        required_role = ESCALATE_TO_LEVEL_ALLOWED[level]
+        if not actor or actor.role != required_role:
+            raise ValueError(f"Only {required_role.replace('_', ' ')} can escalate to L{level}")
     esc = Escalation(
         finding_id=finding_id,
         level=level,

@@ -21,6 +21,8 @@ interface CaseFinding {
   description: string;
   root_cause_note: string | null;
   level: number | null;
+  assigned_to_id: string | null;
+  assigned_to_name: string | null;
 }
 
 interface CaseEscalation {
@@ -75,6 +77,12 @@ export default function CaseDetail() {
     queryFn: () => api.get(`/findings/${id}`).then(r => r.data),
   });
 
+  const { data: personas = [] } = useQuery<{ id: string; role: string }[]>({
+    queryKey: ["personas"],
+    queryFn: () => api.get("/personas").then(r => r.data),
+  });
+  const currentRole = personas.find(p => p.id === actorId)?.role ?? "public";
+
   const { data: caseEscalations = [] } = useQuery<CaseEscalation[]>({
     queryKey: ["case-escalations", id],
     queryFn: () => api.get("/escalations").then(r =>
@@ -99,12 +107,17 @@ export default function CaseDetail() {
   });
 
   const levelMut = useMutation({
-    mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }),
+    mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }, { params: { actor_id: actorId } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["finding", id] });
       qc.invalidateQueries({ queryKey: ["case-escalations", id] });
       qc.invalidateQueries({ queryKey: ["escalations"] });
     },
+  });
+
+  const assignMut = useMutation({
+    mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finding", id] }),
   });
 
   const noteMut = useMutation({
@@ -121,6 +134,8 @@ export default function CaseDetail() {
   const transitions = TRANSITIONS[finding.status] ?? [];
   const isActive = finding.status === "OPEN" || finding.status === "IN_REVIEW";
   const nextLevel = finding.level !== null && finding.level < 3 ? finding.level + 1 : null;
+  const escalateAllowed: Record<number, string> = { 2: "control_owner", 3: "security_lead" };
+  const canEscalate = isActive && nextLevel !== null && escalateAllowed[nextLevel] === currentRole;
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -161,9 +176,9 @@ export default function CaseDetail() {
               {t.label}
             </button>
           ))}
-          {isActive && nextLevel && (
+          {canEscalate && (
             <button
-              onClick={() => levelMut.mutate(nextLevel)}
+              onClick={() => levelMut.mutate(nextLevel!)}
               disabled={levelMut.isPending}
               className="text-sm font-medium px-4 py-2 rounded-md border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors"
             >
@@ -184,6 +199,23 @@ export default function CaseDetail() {
             <div>
               <dt className="text-xs font-medium text-slate-400 mb-0.5">Source</dt>
               <dd className="text-slate-700">{finding.source}</dd>
+            </div>
+            <div className="col-span-2">
+              <dt className="text-xs font-medium text-slate-400 mb-1">Assigned To</dt>
+              <dd className="flex items-center gap-2">
+                <span className="text-sm text-slate-700">{finding.assigned_to_name ?? <span className="text-slate-400 italic">Unassigned</span>}</span>
+                <select
+                  value={finding.assigned_to_id ?? ""}
+                  onChange={e => assignMut.mutate(e.target.value)}
+                  disabled={assignMut.isPending}
+                  className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 text-slate-600"
+                >
+                  <option value="">— Assign to —</option>
+                  {personas.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-medium text-slate-400 mb-0.5">Opened on</dt>

@@ -247,6 +247,7 @@ class Finding(SQLModel, table=True):
     title: str = ""
     description: str = ""
     level: Optional[int] = None
+    assigned_to_id: Optional[str] = Field(default=None, foreign_key="person.id")
 
 
 class CaseNote(SQLModel, table=True):

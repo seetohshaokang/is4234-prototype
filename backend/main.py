@@ -90,6 +90,10 @@ class CaseLevelUpdate(BaseModel):
     level: int
 
 
+class CaseAssign(BaseModel):
+    person_id: str
+
+
 class CollectorSubmitBody(BaseModel):
     check_id: str
     version: str
@@ -416,6 +420,7 @@ def list_findings(status: Optional[str] = None):
             q = q.where(Finding.status == status)
         findings = list(session.exec(q.order_by(Finding.opened_on.desc(), Finding.id.asc())).all())  # type: ignore[attr-defined]
         control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
         return [{"id": f.id, "control_id": f.control_id,
                  "check_id": control_map[f.control_id].check_id if f.control_id in control_map else None,
                  "severity": str(f.severity),
@@ -423,7 +428,9 @@ def list_findings(status: Optional[str] = None):
                  "closed_on": str(f.closed_on) if f.closed_on else None,
                  "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
                  "source": f.source, "title": f.title, "description": f.description,
-                 "root_cause_note": f.root_cause_note, "level": f.level}
+                 "root_cause_note": f.root_cause_note, "level": f.level,
+                 "assigned_to_id": f.assigned_to_id,
+                 "assigned_to_name": person_map[f.assigned_to_id].name if f.assigned_to_id and f.assigned_to_id in person_map else None}
                 for f in findings]
 
 
@@ -444,6 +451,8 @@ def get_finding(finding_id: str):
             "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
             "source": f.source, "title": f.title, "description": f.description,
             "root_cause_note": f.root_cause_note, "level": f.level,
+            "assigned_to_id": f.assigned_to_id,
+            "assigned_to_name": session.get(Person, f.assigned_to_id).name if f.assigned_to_id else None,
         }
 
 
@@ -475,7 +484,7 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
 
 
 @app.patch("/findings/{finding_id}/level")
-def update_finding_level(finding_id: str, body: CaseLevelUpdate):
+def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: str = "SYSTEM"):
     with get_session() as session:
         f = session.get(Finding, finding_id)
         if not f:
@@ -485,10 +494,25 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate):
         if f.level is not None and body.level <= f.level:
             raise HTTPException(status_code=400, detail="Can only escalate to a higher level")
         try:
-            esc = escalate_case(session, finding_id, body.level, "SYSTEM")
+            esc = escalate_case(session, finding_id, body.level, _actor(actor_id))
             return {"ok": True, "level": body.level, "escalation_id": esc.id}
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.patch("/findings/{finding_id}/assign")
+def assign_finding(finding_id: str, body: CaseAssign):
+    with get_session() as session:
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        person = session.get(Person, body.person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail="Person not found")
+        f.assigned_to_id = body.person_id
+        session.add(f)
+        session.commit()
+        return {"ok": True, "assigned_to_id": body.person_id, "assigned_to_name": person.name}
 
 
 @app.get("/findings/{finding_id}/notes")

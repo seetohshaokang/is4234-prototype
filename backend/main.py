@@ -442,6 +442,9 @@ def add_cr_note(cr_id: str, body: CRNoteCreate):
         as_of = get_clock(session)
         note = ChangeRequestNote(cr_id=cr_id, author_id=body.author_id, created_on=as_of, body=body.body)
         session.add(note)
+        session.flush()
+        append_event(session, as_of, body.author_id, "cr_note_added",
+                     "changerequest", cr_id, {"preview": body.body[:80]})
         session.commit()
         session.refresh(note)
         person = session.get(Person, body.author_id)
@@ -514,12 +517,17 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: str
         allowed = VALID_TRANSITIONS.get(str(f.status), [])
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
+        prev_status = str(f.status)
         f.status = FindingStatus(body.status)
         if body.status == "IN_REVIEW" and f.assigned_to_id is None:
             f.assigned_to_id = _actor(actor_id)
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
         session.add(f)
+        session.flush()
+        append_event(session, as_of, _actor(actor_id), "case_status_changed",
+                     "finding", finding_id,
+                     {"from": prev_status, "to": body.status})
         session.commit()
         if body.status == "IN_REVIEW" and f.level is None:
             escalate_case(session, finding_id, 1, "SYSTEM")
@@ -554,6 +562,11 @@ def assign_finding(finding_id: str, body: CaseAssign):
             raise HTTPException(status_code=404, detail="Person not found")
         f.assigned_to_id = body.person_id
         session.add(f)
+        session.flush()
+        as_of = get_clock(session)
+        append_event(session, as_of, "SYSTEM", "case_assigned",
+                     "finding", finding_id,
+                     {"assigned_to": body.person_id, "name": person.name})
         session.commit()
         return {"ok": True, "assigned_to_id": body.person_id, "assigned_to_name": person.name}
 
@@ -586,6 +599,9 @@ def add_case_note(finding_id: str, body: CaseNoteCreate):
         as_of = get_clock(session)
         note = CaseNote(finding_id=finding_id, author_id=body.author_id, created_on=as_of, body=body.body)
         session.add(note)
+        session.flush()
+        append_event(session, as_of, body.author_id, "case_note_added",
+                     "finding", finding_id, {"preview": body.body[:80]})
         session.commit()
         session.refresh(note)
         return {"id": note.id, "author_id": note.author_id, "created_on": str(note.created_on), "body": note.body}
@@ -824,13 +840,18 @@ def _parse_citation_string(s: str):
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
 @app.get("/audit")
-def list_audit(limit: int = 100):
+def list_audit(limit: int = 500, action: Optional[str] = None, actor_id: Optional[str] = None):
     with get_session() as session:
-        events = list(session.exec(
-            select(AuditEvent).order_by(AuditEvent.seq.desc())  # type: ignore[attr-defined]
-            .limit(limit)
-        ).all())
-        return [{"seq": e.seq, "ts_sim": str(e.ts_sim), "actor_id": e.actor_id,
+        q = select(AuditEvent).order_by(AuditEvent.seq.desc())  # type: ignore[attr-defined]
+        if action:
+            q = q.where(AuditEvent.action == action)
+        if actor_id:
+            q = q.where(AuditEvent.actor_id == actor_id)
+        events = list(session.exec(q.limit(limit)).all())
+        person_map = {p.id: p.name for p in session.exec(select(Person)).all()}
+        return [{"seq": e.seq, "ts_sim": str(e.ts_sim),
+                 "actor_id": e.actor_id,
+                 "actor_name": person_map.get(e.actor_id, e.actor_id),
                  "action": e.action, "subject_type": e.subject_type,
                  "subject_id": e.subject_id,
                  "payload": json.loads(e.payload) if e.payload else None,

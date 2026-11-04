@@ -19,13 +19,13 @@ const NAV_PUBLIC = [
 ];
 
 const NAV_INTERNAL = [
+  { to: "/about",       icon: Info,            label: "About" },
   { to: "/sccs",        icon: Library,         label: "SCC Library" },
   { to: "/checks",      icon: FlaskConical,    label: "Checks & Collectors" },
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },
   { to: "/findings",    icon: AlertTriangle,   label: "Findings" },
   { to: "/escalations", icon: GitBranch,       label: "Escalations" },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail" },
-  { to: "/about",       icon: Info,            label: "About" },
 ];
 
 const TOUR_KEY = "scc-tour-seen";

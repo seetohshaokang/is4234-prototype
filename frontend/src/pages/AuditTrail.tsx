@@ -112,6 +112,7 @@ export default function AuditTrail() {
   const { data: events = [], isLoading } = useQuery<AuditEvent[]>({
     queryKey: ["audit"],
     queryFn: () => api.get("/audit").then(r => r.data),
+    staleTime: 0,
   });
 
   const verifyMut = useMutation({
@@ -238,9 +239,8 @@ export default function AuditTrail() {
                       <tr key={ev.seq} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 ${isSystem ? "opacity-50" : ""}`}>
                         <td className="px-4 py-2 font-mono text-slate-400">{ev.seq}</td>
                         <td className="px-4 py-2 font-mono text-slate-500 whitespace-nowrap">{ev.ts_sim?.slice(0, 10)}</td>
-                        <td className="px-4 py-2">
-                          <div className="text-slate-700 font-medium">{ev.actor_name}</div>
-                          <div className="text-slate-400 font-mono">{ev.actor_id}</div>
+                        <td className="px-4 py-2 text-slate-700 font-medium whitespace-nowrap">
+                          {ev.actor_name}
                         </td>
                         <td className={`px-4 py-2 font-medium ${color}`}>{label}</td>
                         <td className="px-4 py-2 font-mono text-slate-500">{ev.subject_id}</td>

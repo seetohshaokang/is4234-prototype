@@ -106,30 +106,32 @@ function EscalationTable({
             <td className="px-5 py-2.5"><Badge value={e.status} /></td>
             {!dimmed && (
               <td className="px-5 py-2.5">
-                <div className="flex gap-2 items-center">
+                <div className="flex flex-col gap-1.5 items-start">
                   <Link
                     to={`/findings/${e.finding_id}`}
                     className="text-xs text-blue-600 hover:text-blue-800 font-medium"
                   >
                     View case →
                   </Link>
-                  {e.status === "OPEN" && (
-                    <button
-                      onClick={() => ackMut.mutate(e.id)}
-                      disabled={ackMut.isPending}
-                      className="text-xs text-slate-500 hover:text-slate-700 disabled:opacity-50"
-                    >
-                      Ack
-                    </button>
-                  )}
-                  {e.level === 3 && onRespond && (
-                    <button
-                      onClick={() => onRespond(e.id)}
-                      className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded px-2 py-0.5 transition-colors"
-                    >
-                      Respond
-                    </button>
-                  )}
+                  <div className="flex gap-1.5">
+                    {e.status === "OPEN" && (
+                      <button
+                        onClick={() => ackMut.mutate(e.id)}
+                        disabled={ackMut.isPending}
+                        className="text-xs border border-slate-200 hover:border-slate-400 text-slate-500 hover:text-slate-700 rounded px-2 py-0.5 disabled:opacity-50 transition-colors"
+                      >
+                        Acknowledge
+                      </button>
+                    )}
+                    {e.level === 3 && onRespond && (
+                      <button
+                        onClick={() => onRespond(e.id)}
+                        className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded px-2 py-0.5 transition-colors"
+                      >
+                        Respond
+                      </button>
+                    )}
+                  </div>
                 </div>
               </td>
             )}

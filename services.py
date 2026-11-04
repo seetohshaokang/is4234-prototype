@@ -726,6 +726,127 @@ def submit_collector(session: Session, check_id: str, version: str, code_hash: s
     return col
 
 
+# ── Auditor SCC management ────────────────────────────────────────────────────
+
+def auditor_create_scc(session: Session, actor_id: str, scc_id: str, title: str,
+                       owner_id: str, assertion_text: str,
+                       target_uptime_pct: float = 99.0, rolling_window_days: int = 365,
+                       max_single_downtime_days: int = 7,
+                       evidence_type: str = "TESTED") -> SCC:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly create SCCs.")
+    if session.get(SCC, scc_id):
+        raise ValueError(f"SCC {scc_id} already exists.")
+    scc = SCC(id=scc_id, title=title, owner_id=owner_id)
+    session.add(scc)
+    sv = SCCVersion(
+        id=f"{scc_id}-v1",
+        scc_id=scc_id,
+        version=1,
+        assertion_text=assertion_text,
+        status=SCCVersionStatus.ACTIVE,
+        active_from=as_of,
+        target_uptime_pct=target_uptime_pct,
+        rolling_window_days=rolling_window_days,
+        max_single_downtime_days=max_single_downtime_days,
+        evidence_type=EvidenceType(evidence_type),
+        approved_by=actor_id,
+    )
+    session.add(sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_created", "scc", scc_id,
+                 {"title": title, "assertion_text": assertion_text})
+    session.commit()
+    return scc
+
+
+def auditor_revise_scc(session: Session, actor_id: str, scc_id: str,
+                       assertion_text: str, reason: str,
+                       target_uptime_pct: float = 99.0, rolling_window_days: int = 365,
+                       max_single_downtime_days: int = 7,
+                       evidence_type: str = "TESTED") -> SCCVersion:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly revise SCCs.")
+    old_sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not old_sv:
+        raise ValueError(f"No active version for SCC {scc_id}.")
+
+    current_intervals = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == old_sv.id,
+                                     StateInterval.end == None)  # noqa: E711
+    ).all())
+    was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+    old_sv.status = SCCVersionStatus.SUPERSEDED
+    old_sv.active_to = as_of
+    old_sv.superseded_while_down = was_down
+    for i in current_intervals:
+        i.end = as_of
+        session.add(i)
+    session.add(old_sv)
+    session.flush()
+
+    new_v_num = old_sv.version + 1
+    new_sv = SCCVersion(
+        id=f"{scc_id}-v{new_v_num}",
+        scc_id=scc_id,
+        version=new_v_num,
+        assertion_text=assertion_text,
+        status=SCCVersionStatus.ACTIVE,
+        active_from=as_of,
+        target_uptime_pct=target_uptime_pct,
+        rolling_window_days=rolling_window_days,
+        max_single_downtime_days=max_single_downtime_days,
+        evidence_type=EvidenceType(evidence_type),
+        supersedes_version_id=old_sv.id,
+        approved_by=actor_id,
+        reason=reason,
+    )
+    session.add(new_sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_revised", "sccversion", new_sv.id,
+                 {"scc_id": scc_id, "version": new_v_num, "reason": reason})
+    session.commit()
+    return new_sv
+
+
+def auditor_deprecate_scc(session: Session, actor_id: str, scc_id: str, reason: str) -> SCCVersion:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly deprecate SCCs.")
+    sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not sv:
+        raise ValueError(f"No active version for SCC {scc_id}.")
+    current_intervals = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == sv.id,
+                                     StateInterval.end == None)  # noqa: E711
+    ).all())
+    was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+    sv.status = SCCVersionStatus.DEPRECATED
+    sv.active_to = as_of
+    sv.deprecated_while_down = was_down
+    sv.reason = reason
+    for i in current_intervals:
+        i.end = as_of
+        session.add(i)
+    session.add(sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_deprecated", "sccversion", sv.id,
+                 {"scc_id": scc_id, "reason": reason, "effective_on": str(as_of)})
+    session.commit()
+    return sv
+
+
 # ── Checkpoints ───────────────────────────────────────────────────────────────
 
 def apply_checkpoint(session: Session, cp_id: str) -> None:

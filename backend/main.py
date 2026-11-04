@@ -29,6 +29,7 @@ from services import (
     escalate_case, ack_escalation, resolve_escalation, respond_escalation,
     create_change_request, approve_change_request, reject_change_request,
     approve_collector, submit_collector, apply_checkpoint, CHECKPOINTS,
+    auditor_create_scc, auditor_revise_scc, auditor_deprecate_scc,
 )
 from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
@@ -97,6 +98,30 @@ class CaseAssign(BaseModel):
 class CRNoteCreate(BaseModel):
     body: str
     author_id: str
+
+
+class SCCCreateBody(BaseModel):
+    scc_id: str
+    title: str
+    owner_id: str
+    assertion_text: str
+    target_uptime_pct: float = 99.0
+    rolling_window_days: int = 365
+    max_single_downtime_days: int = 7
+    evidence_type: str = "TESTED"
+
+
+class SCCReviseBody(BaseModel):
+    assertion_text: str
+    reason: str
+    target_uptime_pct: float = 99.0
+    rolling_window_days: int = 365
+    max_single_downtime_days: int = 7
+    evidence_type: str = "TESTED"
+
+
+class SCCDeprecateBody(BaseModel):
+    reason: str
 
 
 class CollectorSubmitBody(BaseModel):
@@ -280,6 +305,46 @@ def get_scc(scc_id: str):
             })
         return {"id": scc.id, "title": scc.title, "owner_id": scc.owner_id,
                 "versions": versions_with_intervals}
+
+
+@app.post("/sccs")
+def create_scc_route(body: SCCCreateBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            scc = auditor_create_scc(
+                session, _actor(actor_id), body.scc_id, body.title,
+                body.owner_id, body.assertion_text,
+                body.target_uptime_pct, body.rolling_window_days,
+                body.max_single_downtime_days, body.evidence_type,
+            )
+            return {"id": scc.id, "title": scc.title}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/sccs/{scc_id}/revise")
+def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            sv = auditor_revise_scc(
+                session, _actor(actor_id), scc_id,
+                body.assertion_text, body.reason,
+                body.target_uptime_pct, body.rolling_window_days,
+                body.max_single_downtime_days, body.evidence_type,
+            )
+            return {"id": sv.id, "version": sv.version, "status": str(sv.status)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/sccs/{scc_id}/deprecate")
+def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            sv = auditor_deprecate_scc(session, _actor(actor_id), scc_id, body.reason)
+            return {"id": sv.id, "status": str(sv.status)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
 
 # ── Controls & check runs ─────────────────────────────────────────────────────

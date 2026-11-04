@@ -22,6 +22,8 @@ interface ChangeRequest {
 const inputCls =
   "w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500";
 
+const ALLOWED_ROLES = ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"];
+
 export default function ChangeRequests() {
   const { actorId } = useAppStore();
   const qc = useQueryClient();
@@ -80,6 +82,12 @@ export default function ChangeRequests() {
     },
     onError: (e: any) => setError(e.response?.data?.detail ?? "Reject failed"),
   });
+
+  if (actorId === "P-PRIYA") return (
+    <div className="flex items-center justify-center h-64">
+      <p className="text-sm text-slate-400">You do not have access to Change Requests.</p>
+    </div>
+  );
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 

@@ -19,13 +19,13 @@ const NAV_PUBLIC = [
 ];
 
 const NAV_INTERNAL = [
-  { to: "/about",       icon: Info,            label: "About" },
-  { to: "/sccs",        icon: Library,         label: "SCC Library" },
-  { to: "/checks",      icon: FlaskConical,    label: "Security Checks" },
-  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },
-  { to: "/findings",    icon: AlertTriangle,   label: "Findings" },
-  { to: "/escalations", icon: GitBranch,       label: "Escalations" },
-  { to: "/audit",       icon: BookOpen,        label: "Audit Trail" },
+  { to: "/about",       icon: Info,            label: "About",            roles: null },
+  { to: "/sccs",        icon: Library,         label: "SCC Library",      roles: null },
+  { to: "/checks",      icon: FlaskConical,    label: "Security Checks",  roles: null },
+  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"] },
+  { to: "/findings",    icon: AlertTriangle,   label: "Findings",         roles: null },
+  { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: null },
+  { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: null },
 ];
 
 const TOUR_KEY = "scc-tour-seen";
@@ -92,8 +92,11 @@ export default function AppShell({ children }: { children: ReactNode }) {
 
   const currentPersona = allPersonas.find(p => p.id === actorId);
   const isPublic = actorId === "PUBLIC";
-  const nav = isPublic ? NAV_PUBLIC : NAV_INTERNAL;
-  const theme = ROLE_THEME[currentPersona?.role ?? "public"] ?? ROLE_THEME.public;
+  const currentRole = currentPersona?.role ?? "public";
+  const nav = isPublic
+    ? NAV_PUBLIC
+    : NAV_INTERNAL.filter(item => !item.roles || item.roles.includes(currentRole));
+  const theme = ROLE_THEME[currentRole] ?? ROLE_THEME.public;
 
   return (
     <div className="flex h-screen overflow-hidden">

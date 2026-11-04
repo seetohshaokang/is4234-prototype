@@ -304,6 +304,7 @@ export default function SCCDetail() {
   );
 
   const sortedVersions = [...scc.versions].sort((a, b) => a.version - b.version);
+  const activeVersion = sortedVersions.find(v => v.status === "ACTIVE");
 
   return (
     <div className="space-y-6">

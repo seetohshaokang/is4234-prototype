@@ -48,21 +48,21 @@ export default function FindingsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold text-slate-900">Findings</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Security findings from automated and manual evidence tests.</p>
+        <h1 className="text-2xl font-bold text-slate-900">Cases</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Security cases from automated and manual evidence tests.</p>
       </div>
 
       {/* Open findings */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-slate-700">Open Findings</h2>
+            <h2 className="text-sm font-semibold text-slate-700">Open Cases</h2>
             <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{open.length}</span>
           </div>
         </CardHeader>
         <CardBody className="p-0">
           {open.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-slate-400">No open findings.</div>
+            <div className="px-5 py-8 text-center text-sm text-slate-400">No open cases.</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
@@ -104,7 +104,7 @@ export default function FindingsPage() {
       {closed.length > 0 && (
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-slate-500">Closed Findings ({closed.length})</h2>
+            <h2 className="text-sm font-semibold text-slate-500">Closed Cases ({closed.length})</h2>
           </CardHeader>
           <CardBody className="p-0">
             <table className="w-full text-sm">

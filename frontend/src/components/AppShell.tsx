@@ -22,8 +22,8 @@ const NAV_INTERNAL = [
   { to: "/about",       icon: Info,            label: "About",            roles: null },
   { to: "/sccs",        icon: Library,         label: "SCC Library",      roles: null },
   { to: "/checks",      icon: FlaskConical,    label: "Security Checks",  roles: null },
-  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"] },
-  { to: "/findings",    icon: AlertTriangle,   label: "Findings",         roles: null },
+  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee"] },
+  { to: "/findings",    icon: AlertTriangle,   label: "Cases",            roles: null },
   { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: null },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: null },
 ];

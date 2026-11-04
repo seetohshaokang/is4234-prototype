@@ -229,7 +229,7 @@ def _auto_open_finding(session: Session, ctl: Control, outcome: str, measured,
     sev = infer_severity(ctl.check_id, _pinned_check_version(session, ctl.id) or "1",
                          outcome, measured if isinstance(measured, dict) else {})
     count = session.exec(select(Finding)).all()
-    fid = f"F-{as_of.year}-{len(list(count)) + 1:03d}"
+    fid = f"CASE_{as_of.year}_{len(list(count)) + 1:03d}"
     f = Finding(
         id=fid,
         control_id=ctl.id,

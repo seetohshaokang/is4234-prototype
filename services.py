@@ -912,7 +912,7 @@ def _cp4(session: Session, _: date) -> None:
         id="SCC-02-v2",
         scc_id="SCC-02",
         version=2,
-        assertion_text="Systems not behind SSO enforce passwords of ≥ 12 characters with complexity, and no credentials are exposed in code repositories.",
+        assertion_text="Systems not behind SSO enforce a minimum password length of 12 characters; Password complexity rules are enabled on all non-SSO systems; No credentials or secrets are exposed in code repositories",
         status=SCCVersionStatus.ACTIVE,
         active_from=d,
         target_uptime_pct=99.0,

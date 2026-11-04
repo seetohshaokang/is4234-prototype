@@ -32,7 +32,7 @@ from services import (
 )
 from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
-from seed import seed_db, generate_snapshots
+from seed import seed_db, generate_snapshots, apply_all_checkpoints
 
 app = FastAPI(title="SCC Library API", version="1.0.0")
 create_tables()
@@ -197,17 +197,22 @@ def list_sccs():
             ).all())
             active_sv = next((sv for sv in versions
                               if sv.status not in (SCCVersionStatus.REJECTED, SCCVersionStatus.PROPOSED)), None)
-            intervals = _intervals_for(session, active_sv.id) if active_sv else []
+            # Skip SCCs that have no non-rejected version (e.g. SCC-04)
+            if not active_sv:
+                continue
+            intervals = _intervals_for(session, active_sv.id)
             current_state = _current_state_on(intervals, as_of)
             uptime = None
-            if active_sv and active_sv.active_from:
+            if active_sv.active_from:
                 u, unk, days = uptime_pct(intervals, active_sv.active_from, as_of)
                 uptime = round(u, 2)
+            visible_versions = [sv for sv in versions
+                                if sv.status != SCCVersionStatus.REJECTED]
             result.append({
                 "id": scc.id, "title": scc.title, "owner_id": scc.owner_id,
                 "current_state": current_state,
-                "active_version_id": active_sv.id if active_sv else None,
-                "versions": [_sv_dict(sv) for sv in versions],
+                "active_version_id": active_sv.id,
+                "versions": [_sv_dict(sv) for sv in visible_versions],
                 "rolling_uptime_pct": uptime,
             })
         return result
@@ -224,6 +229,9 @@ def get_scc(scc_id: str):
             select(SCCVersion).where(SCCVersion.scc_id == scc_id)
             .order_by(SCCVersion.version)  # type: ignore[attr-defined]
         ).all())
+        versions = [sv for sv in versions if sv.status != SCCVersionStatus.REJECTED]
+        if not versions:
+            raise HTTPException(404, f"SCC {scc_id} has no visible versions")
         versions_with_intervals = []
         for sv in versions:
             ivs = _intervals_for(session, sv.id)
@@ -679,8 +687,8 @@ def reset_db():
     SQLModel.metadata.drop_all(engine)
     SQLModel.metadata.create_all(engine)
     generate_snapshots()
-    with get_session() as session:
-        seed_db()
+    seed_db()
+    apply_all_checkpoints()
     return {"status": "reset"}
 
 

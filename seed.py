@@ -226,11 +226,11 @@ def seed_db() -> None:
     with Session(engine) as s:
         # People
         people = [
-            Person(id="P-PRIYA",   name="Priya N.",   role=Role.CONTROL_OWNER,        title="IT Ops Engineer"),
-            Person(id="P-GRANT",   name="T. Grant",   role=Role.SECURITY_LEAD,         title="VP Security"),
-            Person(id="P-OKAFOR",  name="M. Okafor",  role=Role.DISCLOSURE_COMMITTEE,  title="CFO"),
-            Person(id="P-REYES",   name="A. Reyes",   role=Role.INDEPENDENT_AUDITOR,   title="Independent Auditor"),
-            Person(id="P-MORALES", name="J. Morales", role=Role.AUDIT_COMMITTEE,       title="Audit Committee Chair"),
+            Person(id="P-PRIYA",   name="Control Owner",         role=Role.CONTROL_OWNER,        title="IT Ops Engineer"),
+            Person(id="P-GRANT",   name="Security Lead",         role=Role.SECURITY_LEAD,         title="VP Security"),
+            Person(id="P-OKAFOR",  name="Disclosure Committee",  role=Role.DISCLOSURE_COMMITTEE,  title="CFO"),
+            Person(id="P-REYES",   name="Independent Auditor",   role=Role.INDEPENDENT_AUDITOR,   title="Independent Auditor"),
+            Person(id="P-MORALES", name="Audit Committee",       role=Role.AUDIT_COMMITTEE,       title="Audit Committee Chair"),
         ]
         for p in people:
             s.add(p)
@@ -338,15 +338,15 @@ def seed_db() -> None:
         # SCC versions (PROPOSED at seed time; CP1 activates them or rejects SCC-04)
         scc_versions = [
             SCCVersion(id="SCC-01-v1", scc_id="SCC-01", version=1,
-                       assertion_text="Admin accounts are ≤ 10% of enabled human accounts, none are shared, and remote access comes only from managed devices.",
+                       assertion_text="Admin accounts do not exceed 10% of enabled human accounts; No shared admin accounts exist; Remote access originates only from managed, registered devices",
                        target_uptime_pct=99.0, rolling_window_days=365, max_single_downtime_days=7,
                        evidence_type=EvidenceType.TESTED),
             SCCVersion(id="SCC-02-v1", scc_id="SCC-02", version=1,
-                       assertion_text="Every system enforces passwords of ≥ 8 characters with complexity, and no credentials are exposed in code repositories.",
+                       assertion_text="All systems enforce a minimum password length of 8 characters; Password complexity rules are enabled on all systems; No credentials or secrets are exposed in code repositories",
                        target_uptime_pct=99.0, rolling_window_days=365, max_single_downtime_days=7,
                        evidence_type=EvidenceType.TESTED),
             SCCVersion(id="SCC-03-v1", scc_id="SCC-03", version=1,
-                       assertion_text="Every release pipeline runs security scanning and dependency checks before release.",
+                       assertion_text="Every release pipeline includes a security scan stage; Every release pipeline includes a dependency vulnerability check; No pipeline proceeds to release without passing both checks",
                        target_uptime_pct=99.0, rolling_window_days=365, max_single_downtime_days=7,
                        evidence_type=EvidenceType.TESTED),
             SCCVersion(id="SCC-04-v1", scc_id="SCC-04", version=1,
@@ -354,15 +354,15 @@ def seed_db() -> None:
                        target_uptime_pct=99.0, rolling_window_days=365, max_single_downtime_days=7,
                        evidence_type=EvidenceType.TESTED),
             SCCVersion(id="SCC-05-v1", scc_id="SCC-05", version=1,
-                       assertion_text="Changes to production systems are reviewed, approved and monitored.",
+                       assertion_text="All production changes are submitted via a formal change request; Each change request is reviewed and approved before deployment; Post-deployment monitoring is confirmed for every change",
                        target_uptime_pct=95.0, rolling_window_days=365, max_single_downtime_days=30,
                        evidence_type=EvidenceType.ATTESTED),
             SCCVersion(id="SCC-06-v1", scc_id="SCC-06", version=1,
-                       assertion_text="MFA is enforced on ≥ 98% of human accounts with remote access.",
+                       assertion_text="MFA is enforced on at least 98% of human accounts with remote access; MFA coverage is verified automatically on a rolling 30-day basis",
                        target_uptime_pct=99.0, rolling_window_days=365, max_single_downtime_days=7,
                        evidence_type=EvidenceType.TESTED),
             SCCVersion(id="SCC-07-v1", scc_id="SCC-07", version=1,
-                       assertion_text="Horizon platform availability is ≥ 99.9% each calendar month.",
+                       assertion_text="Horizon platform availability meets or exceeds 99.9% in each completed calendar month; Availability is measured from infrastructure uptime telemetry",
                        target_uptime_pct=90.0, rolling_window_days=365, max_single_downtime_days=31,
                        evidence_type=EvidenceType.TESTED),
         ]
@@ -389,9 +389,21 @@ def seed_db() -> None:
         s.commit()
 
 
+def apply_all_checkpoints() -> None:
+    """Apply CP1–CP9 so the DB starts fully populated."""
+    from db import get_session
+    from services import apply_checkpoint
+    with get_session() as s:
+        for cp in ["CP1", "CP1b", "CP2", "CP3", "CP4", "CP5", "CP6", "CP7", "CP8", "CP9"]:
+            apply_checkpoint(s, cp)
+            print(f"  checkpoint {cp} applied")
+
+
 if __name__ == "__main__":
     print("Generating snapshots...")
     generate_snapshots()
     print("Seeding database...")
     seed_db()
+    print("Applying checkpoints...")
+    apply_all_checkpoints()
     print("Done. make backend && make frontend to start.")

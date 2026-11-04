@@ -13,6 +13,9 @@ interface SCC {
   rolling_uptime_pct: number | null;
 }
 
+const COMPANY = "SolarWinds";
+const AUDITOR = "Meridian Assurance Group";
+
 function stateBadgeClass(state: string) {
   switch (state) {
     case "UPHELD":     return "bg-green-100 text-green-700 border-green-200";
@@ -71,7 +74,8 @@ export default function SCCLibrary() {
                   <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Current State</th>
                   <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Latest Version</th>
                   <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Rolling Uptime %</th>
-                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Owner</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Company</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Audited by</th>
                 </tr>
               </thead>
               <tbody>
@@ -92,7 +96,8 @@ export default function SCCLibrary() {
                         </span>
                       ) : "—"}
                     </td>
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{scc.owner_id}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-600">{COMPANY}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-500">{AUDITOR}</td>
                   </tr>
                 ))}
               </tbody>

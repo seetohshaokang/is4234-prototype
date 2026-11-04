@@ -13,7 +13,6 @@ import { startTour } from "../lib/tour";
 import DemoCoach from "./DemoCoach";
 
 interface Persona { id: string; name: string; role: string; title: string; }
-interface CheckpointsData { available: Array<{ id: string; label: string; date: string; description: string }>; applied: string[]; }
 
 const NAV_PUBLIC = [
   { to: "/sccs", icon: Library, label: "Library" },
@@ -80,14 +79,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.get("/clock").then(r => r.data),
   });
 
-  const { data: checkpointsData } = useQuery<CheckpointsData>({
-    queryKey: ["checkpoints"],
-    queryFn: () => api.get("/checkpoints").then(r => r.data),
-  });
-
-  const checkpoints = checkpointsData?.available ?? [];
-  const appliedSet = new Set(checkpointsData?.applied ?? []);
-
   useEffect(() => {
     if (clock?.date) setSimDate(clock.date);
   }, [clock?.date]);
@@ -97,14 +88,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     onSuccess: (res) => {
       setSimDate(res.data.date);
       qc.invalidateQueries();
-    },
-  });
-
-  const cpMut = useMutation({
-    mutationFn: (cpId: string) => api.post(`/checkpoints/${cpId}/apply`),
-    onSuccess: () => {
-      qc.invalidateQueries();
-      api.get("/clock").then(r => setSimDate(r.data.date));
     },
   });
 
@@ -166,12 +149,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
-        {/* Sim Clock — internal only */}
+        {/* Sim Clock + Reset — internal only */}
         {!isPublic && (
           <div data-tour="clock" className="border-t border-slate-700 px-4 py-3">
-            <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-              <CalendarDays size={13} />
-              <span>Sim date</span>
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                <CalendarDays size={13} />
+                <span>Sim date</span>
+              </div>
+              <button
+                onClick={() => resetMut.mutate()}
+                disabled={resetMut.isPending}
+                title="Reset and re-seed database"
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+              >
+                <RotateCcw size={11} />
+                Reset
+              </button>
             </div>
             <div className="text-white font-mono text-sm mb-2">{simDate}</div>
             <button
@@ -195,42 +189,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
               >
                 Jump
               </button>
-            </div>
-          </div>
-        )}
-
-        {/* Checkpoints — internal only */}
-        {!isPublic && (
-          <div data-tour="checkpoints" className="border-t border-slate-700 px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-xs text-slate-400 font-medium uppercase tracking-wider">Checkpoints</div>
-              <button
-                onClick={() => resetMut.mutate()}
-                disabled={resetMut.isPending || cpMut.isPending}
-                title="Reset to initial state (before CP1)"
-                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-              >
-                <RotateCcw size={11} />
-                Reset
-              </button>
-            </div>
-            <div className="grid grid-cols-3 gap-1">
-              {checkpoints.map(cp => (
-                <button
-                  key={cp.id}
-                  onClick={() => cpMut.mutate(cp.id)}
-                  disabled={cpMut.isPending}
-                  title={`${cp.date}: ${cp.description}`}
-                  className={cn(
-                    "text-xs rounded px-1.5 py-1 transition-colors disabled:opacity-50",
-                    appliedSet.has(cp.id)
-                      ? "bg-blue-700 text-white hover:bg-blue-600"
-                      : "bg-slate-700 hover:bg-blue-700 text-slate-300 hover:text-white"
-                  )}
-                >
-                  {cp.id}
-                </button>
-              ))}
             </div>
           </div>
         )}

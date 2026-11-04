@@ -21,7 +21,7 @@ const NAV_PUBLIC = [
 const NAV_INTERNAL = [
   { to: "/about",       icon: Info,            label: "About" },
   { to: "/sccs",        icon: Library,         label: "SCC Library" },
-  { to: "/checks",      icon: FlaskConical,    label: "Checks & Collectors" },
+  { to: "/checks",      icon: FlaskConical,    label: "Security Checks" },
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },
   { to: "/findings",    icon: AlertTriangle,   label: "Findings" },
   { to: "/escalations", icon: GitBranch,       label: "Escalations" },
@@ -30,6 +30,21 @@ const NAV_INTERNAL = [
 
 const TOUR_KEY = "scc-tour-seen";
 const COACH_KEY = "scc-coach-step";
+
+const ROLE_THEME: Record<string, {
+  sidebar: string;
+  logo: string;
+  navActive: string;
+  navHover: string;
+  border: string;
+}> = {
+  public:               { sidebar: "bg-slate-900",   logo: "text-blue-400",   navActive: "bg-blue-600",    navHover: "hover:bg-slate-800",   border: "border-slate-700" },
+  control_owner:        { sidebar: "bg-teal-900",    logo: "text-teal-300",   navActive: "bg-teal-600",    navHover: "hover:bg-teal-800",    border: "border-teal-700" },
+  security_lead:        { sidebar: "bg-blue-950",    logo: "text-blue-300",   navActive: "bg-blue-600",    navHover: "hover:bg-blue-900",    border: "border-blue-800" },
+  disclosure_committee: { sidebar: "bg-purple-950",  logo: "text-purple-300", navActive: "bg-purple-600",  navHover: "hover:bg-purple-900",  border: "border-purple-800" },
+  independent_auditor:  { sidebar: "bg-amber-950",   logo: "text-amber-300",  navActive: "bg-amber-600",   navHover: "hover:bg-amber-900",   border: "border-amber-800" },
+  audit_committee:      { sidebar: "bg-rose-950",    logo: "text-rose-300",   navActive: "bg-rose-600",    navHover: "hover:bg-rose-900",    border: "border-rose-800" },
+};
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { actorId, setActor } = useAppStore();
@@ -78,14 +93,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const currentPersona = allPersonas.find(p => p.id === actorId);
   const isPublic = actorId === "PUBLIC";
   const nav = isPublic ? NAV_PUBLIC : NAV_INTERNAL;
+  const theme = ROLE_THEME[currentPersona?.role ?? "public"] ?? ROLE_THEME.public;
 
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
-      <aside className="w-60 flex-shrink-0 bg-slate-900 text-slate-100 flex flex-col overflow-y-auto">
+      <aside className={cn("w-60 flex-shrink-0 text-slate-100 flex flex-col overflow-y-auto transition-colors duration-300", theme.sidebar)}>
         {/* Logo */}
-        <div className="flex items-center gap-2 px-4 py-5 border-b border-slate-700">
-          <Library className="text-blue-400" size={22} />
+        <div className={cn("flex items-center gap-2 px-4 py-5 border-b", theme.border)}>
+          <Library className={theme.logo} size={22} />
           <span className="font-semibold text-white text-sm">SCC Library</span>
         </div>
 
@@ -100,8 +116,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 cn(
                   "flex items-center gap-2.5 px-3 py-2 rounded-md text-sm transition-colors",
                   isActive
-                    ? "bg-blue-600 text-white"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800"
+                    ? cn(theme.navActive, "text-white")
+                    : cn("text-slate-400 hover:text-white", theme.navHover)
                 )
               }
             >
@@ -112,22 +128,22 @@ export default function AppShell({ children }: { children: ReactNode }) {
         </nav>
 
         {/* Persona switcher */}
-        <div data-tour="role" className="border-t border-slate-700 px-4 py-3">
+        <div data-tour="role" className={cn("border-t px-4 py-3", theme.border)}>
           <div className="text-xs text-slate-400 mb-1 font-medium">Active persona</div>
           <select
             value={actorId}
             onChange={e => setActor(e.target.value)}
-            className="w-full bg-slate-800 text-white text-xs rounded border border-slate-600 px-2 py-1.5 focus:outline-none focus:border-blue-500"
+            className="w-full bg-black/20 text-white text-xs rounded border border-white/10 px-2 py-1.5 focus:outline-none focus:border-white/30"
           >
             {allPersonas.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
           {currentPersona && currentPersona.role !== "public" && (
-            <div className="mt-1 text-xs text-slate-500">{currentPersona.role.replace(/_/g, " ")}</div>
+            <div className="mt-1 text-xs text-slate-400">{currentPersona.role.replace(/_/g, " ")}</div>
           )}
           {currentPersona?.title && (
-            <div className="mt-0.5 text-xs text-slate-600 truncate">{currentPersona.title}</div>
+            <div className="mt-0.5 text-xs text-slate-500 truncate">{currentPersona.title}</div>
           )}
         </div>
 
@@ -135,7 +151,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
         <button
           onClick={() => setCoach(0)}
           title="Start the guided demo"
-          className="flex items-center justify-center gap-1.5 border-t border-slate-700 px-4 py-2.5 text-xs text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          className={cn("flex items-center justify-center gap-1.5 border-t px-4 py-2.5 text-xs text-slate-400 hover:text-white transition-colors", theme.border, theme.navHover)}
         >
           <CircleHelp size={14} />
           Guided demo

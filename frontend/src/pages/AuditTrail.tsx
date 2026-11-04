@@ -130,6 +130,8 @@ export default function AuditTrail() {
   const q = search.toLowerCase();
   const filtered = events.filter(ev => {
     if (activeActions && !activeActions.has(ev.action)) return false;
+    // Hide clock_set by default; only show it when System filter is explicitly active
+    if (!activeActions && ev.action === "clock_set") return false;
     if (q && !ev.actor_name.toLowerCase().includes(q) &&
             !ev.actor_id.toLowerCase().includes(q) &&
             !ev.action.toLowerCase().includes(q) &&
@@ -209,6 +211,9 @@ export default function AuditTrail() {
                     const color = ACTION_COLORS[ev.action] ?? "text-slate-600";
                     const detail = payloadSummary(ev.action, ev.payload);
                     const isSystem = ev.action === "check_run" || ev.action === "clock_set" || ev.action === "checkpoint_applied";
+                    const subjectDisplay = ev.action === "check_run" && ev.payload
+                      ? `${ev.payload.check_id} · ${ev.payload.outcome}`
+                      : ev.subject_id;
                     return (
                       <tr key={ev.seq} className={`border-b border-slate-50 last:border-0 hover:bg-slate-50 ${isSystem ? "opacity-50" : ""}`}>
                         <td className="px-4 py-2 font-mono text-slate-400">{ev.seq}</td>
@@ -217,7 +222,7 @@ export default function AuditTrail() {
                           {ev.actor_name}
                         </td>
                         <td className={`px-4 py-2 font-medium ${color}`}>{label}</td>
-                        <td className="px-4 py-2 font-mono text-slate-500">{ev.subject_id}</td>
+                        <td className="px-4 py-2 font-mono text-slate-500">{subjectDisplay}</td>
                         <td className="px-4 py-2 text-slate-500 max-w-[220px] truncate">{detail}</td>
                         <td className="px-4 py-2 font-mono text-slate-300">{ev.hash?.slice(0, 8)}…</td>
                       </tr>

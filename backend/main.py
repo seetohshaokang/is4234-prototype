@@ -464,7 +464,7 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 }
 
 @app.patch("/findings/{finding_id}/status")
-def update_finding_status(finding_id: str, body: CaseStatusUpdate):
+def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: str = "SYSTEM"):
     with get_session() as session:
         as_of = get_clock(session)
         f = session.get(Finding, finding_id)
@@ -474,6 +474,8 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
         f.status = FindingStatus(body.status)
+        if body.status == "IN_REVIEW" and f.assigned_to_id is None:
+            f.assigned_to_id = _actor(actor_id)
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
         session.add(f)

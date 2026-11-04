@@ -98,7 +98,7 @@ export default function CaseDetail() {
   });
 
   const statusMut = useMutation({
-    mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }),
+    mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }, { params: { actor_id: actorId } }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["finding", id] });
       qc.invalidateQueries({ queryKey: ["case-escalations", id] });

@@ -246,6 +246,7 @@ class Finding(SQLModel, table=True):
     source: str = "automated_check"
     title: str = ""
     description: str = ""
+    level: Optional[int] = None
 
 
 class CaseNote(SQLModel, table=True):

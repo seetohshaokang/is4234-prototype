@@ -20,6 +20,7 @@ interface CaseFinding {
   title: string;
   description: string;
   root_cause_note: string | null;
+  level: number | null;
 }
 
 interface CaseNote {
@@ -47,6 +48,12 @@ const TRANSITIONS: Record<string, { label: string; next: string; style: string }
   CLOSED:   [],
 };
 
+const ESCALATION_LADDER = [
+  { level: 1, role: "Control Owner",        action: "Acknowledge and begin remediation" },
+  { level: 2, role: "Security Lead",        action: "Review and escalate if needed" },
+  { level: 3, role: "Disclosure Committee", action: "Formal decision: REMEDIATE / STOP_CITING / DISCLOSE" },
+];
+
 export default function CaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -70,6 +77,11 @@ export default function CaseDetail() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["finding", id] }),
   });
 
+  const levelMut = useMutation({
+    mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["finding", id] }),
+  });
+
   const noteMut = useMutation({
     mutationFn: (body: string) =>
       api.post(`/findings/${id}/notes`, { body, author_id: actorId }),
@@ -82,6 +94,8 @@ export default function CaseDetail() {
   if (isLoading || !finding) return <div className="text-slate-400 text-sm">Loading…</div>;
 
   const transitions = TRANSITIONS[finding.status] ?? [];
+  const isActive = finding.status === "OPEN" || finding.status === "IN_REVIEW";
+  const nextLevel = finding.level !== null && finding.level < 3 ? finding.level + 1 : null;
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -103,23 +117,35 @@ export default function CaseDetail() {
               {finding.severity}
             </span>
             <Badge value={finding.status} />
+            {finding.level && (
+              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border bg-purple-100 text-purple-700 border-purple-200">
+                L{finding.level}
+              </span>
+            )}
           </div>
           <h1 className="text-xl font-bold text-slate-900">{finding.title}</h1>
         </div>
-        {transitions.length > 0 && (
-          <div className="flex gap-2 flex-shrink-0">
-            {transitions.map(t => (
-              <button
-                key={t.next}
-                onClick={() => statusMut.mutate(t.next)}
-                disabled={statusMut.isPending}
-                className={`text-sm font-medium px-4 py-2 rounded-md transition-colors ${t.style}`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="flex gap-2 flex-shrink-0">
+          {transitions.map(t => (
+            <button
+              key={t.next}
+              onClick={() => statusMut.mutate(t.next)}
+              disabled={statusMut.isPending}
+              className={`text-sm font-medium px-4 py-2 rounded-md transition-colors ${t.style}`}
+            >
+              {t.label}
+            </button>
+          ))}
+          {isActive && nextLevel && (
+            <button
+              onClick={() => levelMut.mutate(nextLevel)}
+              disabled={levelMut.isPending}
+              className="text-sm font-medium px-4 py-2 rounded-md border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors"
+            >
+              Escalate to L{nextLevel}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Metadata */}
@@ -155,6 +181,50 @@ export default function CaseDetail() {
             <div className="mt-4 pt-4 border-t border-slate-100">
               <div className="text-xs font-medium text-slate-400 mb-1">Description</div>
               <p className="text-sm text-slate-700">{finding.description}</p>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Escalation ladder */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-slate-700">Escalation Level</h2>
+        </CardHeader>
+        <CardBody className="p-0">
+          <table className="w-full text-sm">
+            <tbody>
+              {ESCALATION_LADDER.map(row => {
+                const isCurrentLevel = finding.level === row.level;
+                const isPastLevel = finding.level !== null && row.level < finding.level;
+                return (
+                  <tr
+                    key={row.level}
+                    className={`border-b border-slate-100 last:border-0 ${
+                      isCurrentLevel ? "bg-purple-50" : isPastLevel ? "opacity-40" : ""
+                    }`}
+                  >
+                    <td className="px-5 py-3 w-12">
+                      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${
+                        isCurrentLevel
+                          ? "bg-purple-600 text-white border-purple-600"
+                          : isPastLevel
+                          ? "bg-slate-200 text-slate-500 border-slate-200"
+                          : "bg-white text-slate-400 border-slate-300"
+                      }`}>
+                        L{row.level}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 font-medium text-slate-700">{row.role}</td>
+                    <td className="px-4 py-3 text-slate-500 text-xs">{row.action}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!finding.level && (
+            <div className="px-5 py-3 text-xs text-slate-400 border-t border-slate-100">
+              No escalation level set — pick up the case to begin at L1.
             </div>
           )}
         </CardBody>

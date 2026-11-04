@@ -86,6 +86,10 @@ class CaseNoteCreate(BaseModel):
     author_id: str
 
 
+class CaseLevelUpdate(BaseModel):
+    level: int
+
+
 class CollectorSubmitBody(BaseModel):
     check_id: str
     version: str
@@ -419,7 +423,7 @@ def list_findings(status: Optional[str] = None):
                  "closed_on": str(f.closed_on) if f.closed_on else None,
                  "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
                  "source": f.source, "title": f.title, "description": f.description,
-                 "root_cause_note": f.root_cause_note}
+                 "root_cause_note": f.root_cause_note, "level": f.level}
                 for f in findings]
 
 
@@ -439,7 +443,7 @@ def get_finding(finding_id: str):
             "closed_on": str(f.closed_on) if f.closed_on else None,
             "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
             "source": f.source, "title": f.title, "description": f.description,
-            "root_cause_note": f.root_cause_note,
+            "root_cause_note": f.root_cause_note, "level": f.level,
         }
 
 
@@ -461,11 +465,29 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
         f.status = FindingStatus(body.status)
+        if body.status == "IN_REVIEW" and f.level is None:
+            f.level = 1
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
         session.add(f)
         session.commit()
         return {"ok": True, "status": body.status}
+
+
+@app.patch("/findings/{finding_id}/level")
+def update_finding_level(finding_id: str, body: CaseLevelUpdate):
+    with get_session() as session:
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        if body.level not in (1, 2, 3):
+            raise HTTPException(status_code=400, detail="Level must be 1, 2, or 3")
+        if f.level is not None and body.level <= f.level:
+            raise HTTPException(status_code=400, detail="Can only escalate to a higher level")
+        f.level = body.level
+        session.add(f)
+        session.commit()
+        return {"ok": True, "level": body.level}
 
 
 @app.get("/findings/{finding_id}/notes")

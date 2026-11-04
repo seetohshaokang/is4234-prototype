@@ -1,10 +1,19 @@
 """Escalation engine — pure function, no DB access.
 
-compute_escalations(findings, claims, mappings, existing_escalations, people, as_of)
-  -> list of new escalation dicts to create
+compute_new_escalations(sv_dict, interval_dicts, existing_escalations,
+                        people, as_of, control_owner_ids) -> list[dict]
+
+Returns new escalation dicts to persist. Does not write to DB.
+
+Trigger rules:
+  - SCC DOWN → L3 immediately (L1 also created for control_owner)
+  - SCC UNKNOWN > 14 days → L2; if all L2 conflicted → L3 (independence skip)
+  - Unacknowledged escalation 14 days old → promote one level
+  - Rolling SLA missed (checked externally via trigger="sla_missed") → L4
 """
 
-from datetime import date
+from datetime import date, timedelta
+from typing import Any
 
 LEVEL_ROLES = {
     1: "control_owner",
@@ -14,145 +23,187 @@ LEVEL_ROLES = {
 }
 
 
-def _conflicted_ids(finding: dict, claim: dict | None, people: list[dict]) -> set[str]:
-    """IDs of people who cannot handle this escalation due to conflict of interest."""
-    ids = set()
-    ids.add(finding.get("owner_id", ""))
-    ids.add(finding.get("raised_by_id", ""))
-    if claim:
-        ids.add(claim.get("owner_id", ""))
-    ids.discard("")
-    return ids
-
-
 def _assignee(level: int, conflicted: set[str], people: list[dict]) -> tuple[str | None, list[str]]:
-    """Pick an assignee at the given level, skipping conflicted people.
-    Returns (person_id or None, list of skipped person_ids).
-    """
     role = LEVEL_ROLES.get(level)
-    candidates = [p for p in people if p["role"] == role]
-    skipped = []
+    candidates = [p for p in people if p.get("role") == role]
+    skipped: list[str] = []
     for p in candidates:
         if p["id"] in conflicted:
             skipped.append(p["id"])
         else:
             return p["id"], skipped
-    # all conflicted — jump to next level
     return None, skipped
 
 
-def compute_new_escalations(
-    findings: list[dict],
-    published_claim_control_ids: set[str],  # control IDs backing published claims
-    claim_by_control: dict[str, dict],      # control_id -> claim dict (for owner conflict)
-    existing_escalations: list[dict],       # current open escalation records
-    people: list[dict],
-    as_of: date,
-) -> list[dict]:
-    """Return list of new escalation dicts to create. Does not write to DB."""
-
-    new_escalations = []
-
-    # Index existing open escalations by (subject_id, requested_level).
-    # Bumped escalations count toward the level they originated at, so
-    # re-runs don't recreate them.
-    existing = {
-        (e["subject_id"], e.get("requested_level") or e["level"])
-        for e in existing_escalations
-        if e["status"] in ("OPEN", "ACK")
-    }
-
-    def needs(finding_id: str, level: int) -> bool:
-        return (finding_id, level) not in existing
-
-    for f in findings:
-        if f["status"] != "OPEN":
-            continue
-        fid = f["id"]
-        sev = f["severity"]
-        opened = date.fromisoformat(str(f["opened_on"]))
-        days_open = (as_of - opened).days
-        on_published_claim = f["control_id"] in published_claim_control_ids
-        claim = claim_by_control.get(f["control_id"])
-        conflicted = _conflicted_ids(f, claim, people)
-
-        if sev in ("HIGH", "CRITICAL"):
-            # L1 + L2 immediately on open
-            for level in (1, 2):
-                if needs(fid, level):
-                    assignee_id, skipped = _assignee(level, conflicted, people)
-                    new_escalations.append(_make(fid, level, assignee_id, skipped, people,
-                        f"High/Critical finding {fid} requires immediate attention.", as_of))
-
-            # L3 at 30 days if backs published claim, else at 60 days
-            l3_threshold = 30 if on_published_claim else 60
-            if days_open >= l3_threshold and needs(fid, 3):
-                assignee_id, skipped = _assignee(3, conflicted, people)
-                new_escalations.append(_make(fid, 3, assignee_id, skipped, people,
-                    f"Finding {fid} open {days_open} days" +
-                    (" — backs a published claim" if on_published_claim else "") + ".", as_of))
-
-            # L4 at 90 days
-            if days_open >= 90 and needs(fid, 4):
-                assignee_id, skipped = _assignee(4, conflicted, people)
-                new_escalations.append(_make(fid, 4, assignee_id, skipped, people,
-                    f"Finding {fid} open {days_open} days with no resolution — board-level escalation.", as_of))
-
-        elif sev == "MEDIUM":
-            # L3 at 90 days
-            if days_open >= 90 and needs(fid, 3):
-                assignee_id, skipped = _assignee(3, conflicted, people)
-                new_escalations.append(_make(fid, 3, assignee_id, skipped, people,
-                    f"Medium finding {fid} open {days_open} days.", as_of))
-
-    # Unacknowledged 14-day auto-promote
-    for esc in existing_escalations:
-        if esc["status"] != "OPEN" or esc["acknowledged_on"]:
-            continue
-        created = date.fromisoformat(str(esc["created_on"]))
-        if (as_of - created).days >= 14:
-            next_level = min(esc["level"] + 1, 4)
-            subject_id = esc["subject_id"]
-            if (subject_id, next_level) not in existing:
-                new_escalations.append({
-                    "subject_type": esc["subject_type"],
-                    "subject_id": subject_id,
-                    "level": next_level,
-                    "requested_level": next_level,
-                    "assigned_to_role": LEVEL_ROLES[next_level],
-                    "assigned_to_id": None,
-                    "reason": f"Escalation at level {esc['level']} unacknowledged for 14 days — auto-promoted.",
-                    "created_on": as_of,
-                    "status": "OPEN",
-                    "independence_skips": "[]",
-                    "_supersedes": esc.get("id"),
-                })
-
-    return new_escalations
-
-
-def _make(finding_id: str, level: int, assignee_id: str | None, skipped: list[str],
-          people: list[dict], reason: str, as_of: date) -> dict:
-    # If assignee_id is None (all conflicted), bump to next level
+def _make_esc(trigger: str, level: int, assignee_id: str | None, skipped: list[str],
+              people: list[dict], reason: str, as_of: date,
+              requested_level: int | None = None,
+              supersedes: int | None = None) -> dict:
     actual_level = level
+    role = LEVEL_ROLES.get(actual_level, "audit_committee")
     if assignee_id is None and level < 4:
         actual_level = level + 1
-        role = LEVEL_ROLES[actual_level]
-        candidates = [p for p in people if p["role"] == role]
+        role = LEVEL_ROLES.get(actual_level, "audit_committee")
+        candidates = [p for p in people if p.get("role") == role]
         assignee_id = candidates[0]["id"] if candidates else None
-        reason += f" (independence_skip: all level-{level} candidates conflicted)"
-    else:
-        role = LEVEL_ROLES[actual_level]
-
+        reason += f" (skipped level {level}: all candidates conflicted)"
     return {
-        "subject_type": "finding",
-        "subject_id": finding_id,
+        "trigger": trigger,
         "level": actual_level,
-        "requested_level": level,
+        "requested_level": requested_level or level,
         "assigned_to_role": role,
         "assigned_to_id": assignee_id,
         "reason": reason,
-        "created_on": as_of,
-        "status": "OPEN",
-        "independence_skips": str(skipped),
+        "independence_skips": skipped,
+        "_supersedes": supersedes,
     }
+
+
+def _current_state(interval_dicts: list[dict], as_of: date) -> str:
+    """Return the state on as_of from the interval list."""
+    for iv in interval_dicts:
+        start: date = iv["start"] if isinstance(iv["start"], date) else date.fromisoformat(str(iv["start"]))
+        end_raw = iv.get("end")
+        end: date | None = None
+        if end_raw:
+            end = end_raw if isinstance(end_raw, date) else date.fromisoformat(str(end_raw))
+        if start <= as_of and (end is None or end >= as_of):
+            return iv["state"]
+    return "UNKNOWN"
+
+
+def _days_in_state(interval_dicts: list[dict], state: str, as_of: date) -> int:
+    """Return days the SCC has been continuously in `state` up to as_of."""
+    # Find the latest interval in that state ending on or after as_of
+    # and contiguous with today
+    total = 0
+    # Walk backwards: find ongoing or most recent interval in that state
+    for iv in reversed(interval_dicts):
+        s = iv["state"]
+        start: date = iv["start"] if isinstance(iv["start"], date) else date.fromisoformat(str(iv["start"]))
+        end_raw = iv.get("end")
+        end: date | None = None
+        if end_raw:
+            end = end_raw if isinstance(end_raw, date) else date.fromisoformat(str(end_raw))
+
+        if s != state:
+            if total > 0:
+                break  # state chain broken
+            continue
+
+        if end is None or end >= as_of:
+            # Interval covers today
+            total += (as_of - start).days + 1
+            # Keep going backwards if the previous interval is also in same state
+        elif end == as_of - timedelta(days=1):
+            total += (end - start).days + 1
+        else:
+            break
+
+    return total
+
+
+def compute_new_escalations(
+    sv_dict: dict,
+    interval_dicts: list[dict],
+    existing_escalations: list[dict],
+    people: list[dict],
+    as_of: date,
+    control_owner_ids: list[str] | None = None,
+) -> list[dict]:
+    """Return list of new escalation dicts to create."""
+
+    sccversion_id: str = sv_dict["id"]
+    scc_id: str = sv_dict.get("scc_id", "")
+    scc_owner_id: str = sv_dict.get("owner_id", scc_id)
+
+    # People who own the SCC (conflict of interest for independence)
+    # Grant (P-GRANT) owns every SCC → always conflicts at L1/L2
+    conflicted: set[str] = {scc_owner_id}
+    if control_owner_ids:
+        conflicted.update(control_owner_ids)
+
+    # Index existing open/ack escalations by (sccversion_id, trigger, level)
+    existing_keys: set[tuple] = set()
+    for e in existing_escalations:
+        if e.get("status") in ("OPEN", "ACK") and e.get("sccversion_id") == sccversion_id:
+            key = (sccversion_id, e.get("trigger", ""), e.get("requested_level") or e.get("level"))
+            existing_keys.add(key)
+
+    new_escs: list[dict] = []
+
+    def already_exists(trigger: str, level: int) -> bool:
+        return (sccversion_id, trigger, level) in existing_keys
+
+    state = _current_state(interval_dicts, as_of)
+
+    # ── Trigger: SCC DOWN ─────────────────────────────────────────────────────
+    if state == "DOWN":
+        # L1 → control owner (immediate)
+        if not already_exists("scc_down", 1):
+            aid, skipped = _assignee(1, conflicted, people)
+            new_escs.append(_make_esc(
+                "scc_down", 1, aid, skipped, people,
+                f"{sccversion_id} has entered DOWN state. Immediate remediation required.",
+                as_of, requested_level=1,
+            ))
+
+        # L3 → committee immediately (committee response required)
+        if not already_exists("scc_down", 3):
+            aid, skipped = _assignee(3, conflicted, people)
+            new_escs.append(_make_esc(
+                "scc_down", 3, aid, skipped, people,
+                f"{sccversion_id} is DOWN — committee response required.",
+                as_of, requested_level=3,
+            ))
+
+    # ── Trigger: SCC UNKNOWN > 14 days ───────────────────────────────────────
+    if state == "UNKNOWN":
+        unknown_days = _days_in_state(interval_dicts, "UNKNOWN", as_of)
+        if unknown_days > 14 and not already_exists("scc_unknown_14d", 2):
+            aid, skipped = _assignee(2, conflicted, people)
+            if aid is None:
+                # Grant is security_lead and owns every SCC → skip to L3
+                aid, skipped2 = _assignee(3, conflicted, people)
+                skipped += skipped2
+                new_escs.append(_make_esc(
+                    "scc_unknown_14d", 3, aid, skipped, people,
+                    f"{sccversion_id} has been UNKNOWN for {unknown_days} days. "
+                    f"L2 skipped (independence): escalating to committee.",
+                    as_of, requested_level=2,
+                ))
+            else:
+                new_escs.append(_make_esc(
+                    "scc_unknown_14d", 2, aid, skipped, people,
+                    f"{sccversion_id} has been UNKNOWN for {unknown_days} days.",
+                    as_of, requested_level=2,
+                ))
+
+    # ── Auto-promote unacknowledged escalations after 14 days ───────────────
+    for esc in existing_escalations:
+        if esc.get("status") != "OPEN":
+            continue
+        if esc.get("sccversion_id") != sccversion_id:
+            continue
+        if esc.get("acknowledged_on"):
+            continue
+        created_raw = esc.get("created_on")
+        if not created_raw:
+            continue
+        created = created_raw if isinstance(created_raw, date) else date.fromisoformat(str(created_raw))
+        if (as_of - created).days < 14:
+            continue
+        current_level = esc.get("level", 1)
+        next_level = min(current_level + 1, 4)
+        trigger = esc.get("trigger", "unknown")
+        if already_exists(trigger, next_level):
+            continue
+        aid, skipped = _assignee(next_level, conflicted, people)
+        new_escs.append(_make_esc(
+            trigger, next_level, aid, skipped, people,
+            f"Escalation at L{current_level} unacknowledged for 14 days — auto-promoted.",
+            as_of, requested_level=next_level,
+            supersedes=esc.get("id"),
+        ))
+
+    return new_escs

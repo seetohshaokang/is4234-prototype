@@ -2,9 +2,9 @@ import { type ReactNode, useEffect, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  ShieldCheck, LayoutDashboard, FileText, TestTube2,
-  AlertTriangle, GitBranch, ClipboardCheck, BookOpen, Info,
-  CalendarDays, CircleHelp
+  Library, LayoutDashboard, FlaskConical,
+  AlertTriangle, GitBranch, BookOpen, Info,
+  CalendarDays, CircleHelp, GitPullRequest, Search, RotateCcw,
 } from "lucide-react";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
@@ -12,22 +12,23 @@ import { cn } from "../lib/utils";
 import { startTour } from "../lib/tour";
 import DemoCoach from "./DemoCoach";
 
-interface Actor { id: string; name: string; role: string; }
-interface Checkpoint { id: string; label: string; date: string; description: string; applied?: boolean; }
+interface Persona { id: string; name: string; role: string; title: string; }
+interface CheckpointsData { available: Array<{ id: string; label: string; date: string; description: string }>; applied: string[]; }
 
 const NAV = [
   { to: "/",            icon: LayoutDashboard, label: "Dashboard" },
-  { to: "/claims",      icon: FileText,        label: "Claim Registry" },
-  { to: "/controls",    icon: TestTube2,       label: "Control Tests" },
-  { to: "/gate",        icon: ClipboardCheck,  label: "Gate Review" },
+  { to: "/sccs",        icon: Library,         label: "SCC Library" },
+  { to: "/checks",      icon: FlaskConical,    label: "Checks & Collectors" },
+  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests" },
   { to: "/findings",    icon: AlertTriangle,   label: "Findings" },
   { to: "/escalations", icon: GitBranch,       label: "Escalations" },
+  { to: "/resolver",    icon: Search,          label: "Resolver" },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail" },
   { to: "/about",       icon: Info,            label: "About" },
 ];
 
-const TOUR_KEY = "dg-tour-seen";
-const COACH_KEY = "dg-coach-step";
+const TOUR_KEY = "scc-tour-seen";
+const COACH_KEY = "scc-coach-step";
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const { actorId, simDate, setActor, setSimDate } = useAppStore();
@@ -65,9 +66,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
     setShowWelcome(false);
   };
 
-  const { data: actors = [] } = useQuery<Actor[]>({
-    queryKey: ["actors"],
-    queryFn: () => api.get("/actors").then(r => r.data),
+  const { data: personas = [] } = useQuery<Persona[]>({
+    queryKey: ["personas"],
+    queryFn: () => api.get("/personas").then(r => r.data),
   });
 
   const { data: clock } = useQuery<{ date: string }>({
@@ -75,10 +76,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.get("/clock").then(r => r.data),
   });
 
-  const { data: checkpoints = [] } = useQuery<Checkpoint[]>({
+  const { data: checkpointsData } = useQuery<CheckpointsData>({
     queryKey: ["checkpoints"],
     queryFn: () => api.get("/checkpoints").then(r => r.data),
   });
+
+  const checkpoints = checkpointsData?.available ?? [];
+  const appliedSet = new Set(checkpointsData?.applied ?? []);
 
   useEffect(() => {
     if (clock?.date) setSimDate(clock.date);
@@ -93,7 +97,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   });
 
   const cpMut = useMutation({
-    mutationFn: (cpId: string) => api.post(`/checkpoints/${cpId}/goto`),
+    mutationFn: (cpId: string) => api.post(`/checkpoints/${cpId}/apply`),
     onSuccess: () => {
       qc.invalidateQueries();
       api.get("/clock").then(r => setSimDate(r.data.date));
@@ -101,7 +105,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   });
 
   const resetMut = useMutation({
-    mutationFn: () => api.post("/demo/reset"),
+    mutationFn: () => api.post("/reset"),
     onSuccess: () => {
       qc.invalidateQueries();
       api.get("/clock").then(r => setSimDate(r.data.date));
@@ -116,7 +120,13 @@ export default function AppShell({ children }: { children: ReactNode }) {
     },
   });
 
-  const currentActor = actors.find(a => a.id === actorId);
+  // Build persona list including PUBLIC option
+  const allPersonas: Array<{ id: string; name: string; role: string; title: string }> = [
+    { id: "PUBLIC", name: "Public (no role)", role: "public", title: "" },
+    ...personas,
+  ];
+
+  const currentPersona = allPersonas.find(p => p.id === actorId);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -124,8 +134,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
       <aside className="w-60 flex-shrink-0 bg-slate-900 text-slate-100 flex flex-col overflow-y-auto">
         {/* Logo */}
         <div className="flex items-center gap-2 px-4 py-5 border-b border-slate-700">
-          <ShieldCheck className="text-blue-400" size={22} />
-          <span className="font-semibold text-white text-sm">Disclosure Gate</span>
+          <Library className="text-blue-400" size={22} />
+          <span className="font-semibold text-white text-sm">SCC Library</span>
         </div>
 
         {/* Nav */}
@@ -188,9 +198,10 @@ export default function AppShell({ children }: { children: ReactNode }) {
             <button
               onClick={() => resetMut.mutate()}
               disabled={resetMut.isPending || cpMut.isPending}
-              title="Reset demo state (before CP1)"
-              className="text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
+              title="Reset to initial state (before CP1)"
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
             >
+              <RotateCcw size={11} />
               Reset
             </button>
           </div>
@@ -203,7 +214,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
                 title={`${cp.date}: ${cp.description}`}
                 className={cn(
                   "text-xs rounded px-1.5 py-1 transition-colors disabled:opacity-50",
-                  cp.applied
+                  appliedSet.has(cp.id)
                     ? "bg-blue-700 text-white hover:bg-blue-600"
                     : "bg-slate-700 hover:bg-blue-700 text-slate-300 hover:text-white"
                 )}
@@ -214,20 +225,23 @@ export default function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
 
-        {/* Role switcher */}
+        {/* Persona switcher */}
         <div data-tour="role" className="border-t border-slate-700 px-4 py-3">
-          <div className="text-xs text-slate-400 mb-1 font-medium">Active role</div>
+          <div className="text-xs text-slate-400 mb-1 font-medium">Active persona</div>
           <select
             value={actorId}
             onChange={e => setActor(e.target.value)}
             className="w-full bg-slate-800 text-white text-xs rounded border border-slate-600 px-2 py-1.5 focus:outline-none focus:border-blue-500"
           >
-            {actors.map(a => (
-              <option key={a.id} value={a.id}>{a.name}</option>
+            {allPersonas.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
-          {currentActor && (
-            <div className="mt-1 text-xs text-slate-500">{currentActor.role.replace(/_/g, " ")}</div>
+          {currentPersona && currentPersona.role !== "public" && (
+            <div className="mt-1 text-xs text-slate-500">{currentPersona.role.replace(/_/g, " ")}</div>
+          )}
+          {currentPersona?.title && (
+            <div className="mt-0.5 text-xs text-slate-600 truncate">{currentPersona.title}</div>
           )}
         </div>
 
@@ -251,15 +265,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
       {showWelcome && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50">
           <div className="bg-white rounded-lg shadow-xl max-w-sm mx-4 p-6">
-            <h2 className="text-lg font-bold text-slate-900">Welcome to Disclosure Gate</h2>
+            <h2 className="text-lg font-bold text-slate-900">Welcome to SCC Library</h2>
             <p className="mt-2 text-sm text-slate-600">
-              A proof-of-concept of a disclosure gate: a control that checks whether a
-              company's public security claims are backed by its internal evidence.
+              A proof-of-concept of a Security Citation Code (SCC) library: measurable security
+              assertions tracked like SLAs, with automated evidence collection and citation generation.
             </p>
             <p className="mt-2 text-sm text-slate-600">
               This POC is built around the NimbusWatch case study — the checkpoints walk
-              that company's timeline, and the actions you can take along the way show
-              how a production version would behave.
+              that company's timeline from 2017 to 2020, and the actions you can take along
+              the way show how a production version would behave.
             </p>
             <p className="mt-2 text-sm text-slate-600">
               Want a guided demo of the case study, or a quick tour of each tab?

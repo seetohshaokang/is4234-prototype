@@ -1,0 +1,186 @@
+account_id,display_name,dept,job_role,is_admin,is_shared,is_service_account,enabled,mfa_enabled,has_remote_access
+USR0001,shared-svc-1,IT Ops,Engineer,True,True,False,True,True,True
+USR0002,shared-svc-2,Sales,Analyst,True,True,False,True,True,True
+USR0003,shared-svc-3,Legal,Manager,True,True,False,True,True,True
+USR0004,User 4,Sales,Director,True,False,False,True,True,True
+USR0005,User 5,Sales,Analyst,True,False,False,True,True,True
+USR0006,User 6,Legal,Coordinator,True,False,False,True,True,True
+USR0007,User 7,IT Ops,Engineer,True,False,False,True,True,True
+USR0008,User 8,DevOps,Specialist,True,False,False,True,True,True
+USR0009,User 9,Sales,Specialist,True,False,False,True,True,True
+USR0010,User 10,HR,Specialist,True,False,False,True,True,True
+USR0011,User 11,HR,Manager,True,False,False,True,True,True
+USR0012,User 12,IT Ops,Analyst,True,False,False,True,True,True
+USR0013,User 13,DevOps,Analyst,True,False,False,True,True,True
+USR0014,User 14,Sales,Specialist,True,False,False,True,True,True
+USR0015,User 15,HR,Analyst,True,False,False,True,True,True
+USR0016,User 16,Engineering,Specialist,True,False,False,True,True,True
+USR0017,User 17,Engineering,Analyst,True,False,False,True,True,True
+USR0018,User 18,Sales,Coordinator,True,False,False,True,True,True
+USR0019,User 19,Legal,Coordinator,True,False,False,True,True,True
+USR0020,User 20,Sales,Director,True,False,False,True,True,True
+USR0021,User 21,HR,Analyst,True,False,False,True,True,True
+USR0022,User 22,HR,Analyst,True,False,False,True,True,True
+USR0023,User 23,Finance,Manager,True,False,False,True,True,True
+USR0024,User 24,Sales,Coordinator,True,False,False,True,True,True
+USR0025,User 25,Engineering,Engineer,True,False,False,True,True,True
+USR0026,User 26,IT Ops,Specialist,True,False,False,True,True,True
+USR0027,User 27,Sales,Analyst,True,False,False,True,True,True
+USR0028,User 28,Finance,Manager,True,False,False,True,True,True
+USR0029,User 29,Legal,Specialist,True,False,False,True,True,True
+USR0030,User 30,Legal,Engineer,True,False,False,True,True,True
+USR0031,User 31,Sales,Specialist,True,False,False,True,True,True
+USR0032,User 32,HR,Director,True,False,False,True,True,True
+USR0033,User 33,Finance,Specialist,True,False,False,True,True,True
+USR0034,User 34,DevOps,Engineer,True,False,False,True,True,True
+USR0035,User 35,DevOps,Manager,True,False,False,True,True,True
+USR0036,User 36,Legal,Director,True,False,False,True,True,True
+USR0037,User 37,Finance,Engineer,True,False,False,True,True,True
+USR0038,User 38,Engineering,Analyst,True,False,False,True,True,True
+USR0039,User 39,HR,Director,True,False,False,True,True,True
+USR0040,User 40,Sales,Engineer,True,False,False,True,True,True
+USR0041,User 41,Legal,Engineer,True,False,False,True,True,True
+USR0042,User 42,Engineering,Analyst,True,False,False,True,True,True
+USR0043,User 43,Engineering,Manager,True,False,False,True,True,True
+USR0044,User 44,Engineering,Specialist,True,False,False,True,True,True
+USR0045,User 45,Legal,Analyst,True,False,False,True,True,True
+USR0046,User 46,Legal,Specialist,True,False,False,True,True,True
+USR0047,User 47,Finance,Analyst,True,False,False,True,True,True
+USR0048,User 48,Finance,Specialist,True,False,False,True,True,True
+USR0049,User 49,Legal,Analyst,True,False,False,True,True,True
+USR0050,User 50,Engineering,Director,True,False,False,True,True,True
+USR0051,User 51,Engineering,Coordinator,True,False,False,True,True,True
+USR0052,User 52,Finance,Specialist,True,False,False,True,True,True
+USR0053,User 53,Finance,Coordinator,True,False,False,True,True,True
+USR0054,User 54,Sales,Manager,True,False,False,True,True,True
+USR0055,User 55,Sales,Specialist,True,False,False,True,True,True
+USR0056,User 56,Finance,Manager,True,False,False,True,True,True
+USR0057,User 57,IT Ops,Coordinator,True,False,False,True,True,True
+USR0058,User 58,IT Ops,Engineer,True,False,False,True,True,True
+USR0059,User 59,Sales,Analyst,True,False,False,True,True,True
+USR0060,User 60,DevOps,Director,True,False,False,True,True,True
+USR0061,User 61,IT Ops,Coordinator,True,False,False,True,True,True
+USR0062,User 62,Finance,Manager,True,False,False,True,True,True
+USR0063,User 63,IT Ops,Specialist,True,False,False,True,True,True
+USR0064,User 64,Sales,Engineer,True,False,False,True,True,True
+USR0065,User 65,HR,Analyst,True,False,False,True,True,True
+USR0066,User 66,Finance,Director,True,False,False,True,True,True
+USR0067,User 67,Engineering,Manager,True,False,False,True,True,True
+USR0068,User 68,IT Ops,Engineer,True,False,False,True,True,True
+USR0069,User 69,Sales,Director,True,False,False,True,True,True
+USR0070,User 70,Sales,Coordinator,True,False,False,True,True,True
+USR0071,User 71,DevOps,Specialist,True,False,False,True,True,True
+USR0072,User 72,Finance,Engineer,True,False,False,True,True,True
+USR0073,User 73,Engineering,Coordinator,True,False,False,True,True,True
+USR0074,User 74,IT Ops,Engineer,True,False,False,True,True,True
+USR0075,User 75,Sales,Coordinator,True,False,False,True,True,True
+USR0076,User 76,Legal,Director,True,False,False,True,True,True
+USR0077,User 77,Legal,Specialist,True,False,False,True,True,True
+USR0078,User 78,Legal,Manager,True,False,False,True,True,True
+USR0079,User 79,Sales,Engineer,True,False,False,True,True,True
+USR0080,User 80,Engineering,Analyst,True,False,False,True,True,True
+USR0081,User 81,DevOps,Director,True,False,False,True,True,True
+USR0082,User 82,Engineering,Analyst,True,False,False,True,True,True
+USR0083,User 83,Sales,Manager,True,False,False,True,True,True
+USR0084,User 84,IT Ops,Coordinator,True,False,False,True,True,True
+USR0085,User 85,HR,Manager,True,False,False,True,True,True
+USR0086,User 86,Legal,Engineer,True,False,False,True,True,True
+USR0087,User 87,DevOps,Director,True,False,False,True,True,True
+USR0088,User 88,IT Ops,Specialist,True,False,False,True,True,True
+USR0089,User 89,Legal,Manager,True,False,False,True,True,True
+USR0090,User 90,Finance,Director,True,False,False,True,True,True
+USR0091,User 91,Engineering,Coordinator,True,False,False,True,True,True
+USR0092,User 92,IT Ops,Engineer,True,False,False,True,True,True
+USR0093,User 93,Sales,Manager,True,False,False,True,True,True
+USR0094,User 94,Sales,Coordinator,True,False,False,True,True,True
+USR0095,User 95,Engineering,Engineer,True,False,False,True,True,True
+USR0096,User 96,Finance,Engineer,True,False,False,True,True,True
+USR0097,User 97,HR,Coordinator,True,False,False,True,True,True
+USR0098,User 98,HR,Coordinator,True,False,False,True,True,True
+USR0099,User 99,Sales,Specialist,True,False,False,True,True,True
+USR0100,User 100,DevOps,Director,True,False,False,True,True,True
+USR0101,User 101,Legal,Manager,True,False,False,True,True,True
+USR0102,User 102,Engineering,Coordinator,True,False,False,True,False,True
+USR0103,User 103,Engineering,Coordinator,True,False,False,True,False,True
+USR0104,User 104,Finance,Analyst,True,False,False,True,False,True
+USR0105,User 105,DevOps,Analyst,True,False,False,True,False,True
+USR0106,User 106,Engineering,Analyst,True,False,False,True,False,True
+USR0107,User 107,DevOps,Engineer,True,False,False,True,False,True
+USR0108,User 108,Legal,Manager,True,False,False,True,False,True
+USR0109,User 109,Sales,Director,True,False,False,True,False,True
+USR0110,User 110,DevOps,Engineer,True,False,False,True,False,True
+USR0111,User 111,Engineering,Manager,True,False,False,True,False,True
+USR0112,User 112,Legal,Analyst,True,False,False,True,False,False
+USR0113,User 113,Legal,Engineer,True,False,False,True,False,False
+USR0114,User 114,Engineering,Director,True,False,False,True,False,False
+USR0115,User 115,IT Ops,Manager,True,False,False,True,False,False
+USR0116,User 116,IT Ops,Coordinator,True,False,False,True,False,False
+USR0117,User 117,Legal,Engineer,True,False,False,True,False,False
+USR0118,User 118,Sales,Engineer,True,False,False,True,False,False
+USR0119,User 119,IT Ops,Director,True,False,False,True,False,False
+USR0120,User 120,IT Ops,Analyst,True,False,False,True,False,False
+USR0121,User 121,Finance,Analyst,True,False,False,True,False,False
+USR0122,User 122,Legal,Director,True,False,False,True,False,False
+USR0123,User 123,Sales,Engineer,True,False,False,True,False,False
+USR0124,User 124,Engineering,Director,True,False,False,True,False,False
+USR0125,User 125,IT Ops,Manager,True,False,False,True,False,False
+USR0126,User 126,Engineering,Coordinator,True,False,False,True,False,False
+USR0127,User 127,Engineering,Manager,True,False,False,True,False,False
+USR0128,User 128,DevOps,Engineer,True,False,False,True,False,False
+USR0129,User 129,Finance,Specialist,True,False,False,True,False,False
+USR0130,User 130,DevOps,Coordinator,False,False,False,True,False,False
+USR0131,User 131,DevOps,Engineer,False,False,False,True,False,False
+USR0132,User 132,DevOps,Coordinator,False,False,False,True,False,False
+USR0133,User 133,Legal,Coordinator,False,False,False,True,False,False
+USR0134,User 134,HR,Director,False,False,False,True,False,False
+USR0135,User 135,HR,Analyst,False,False,False,True,False,False
+USR0136,User 136,Legal,Engineer,False,False,False,True,False,False
+USR0137,User 137,Finance,Director,False,False,False,True,False,False
+USR0138,User 138,HR,Coordinator,False,False,False,True,False,False
+USR0139,User 139,HR,Coordinator,False,False,False,True,False,False
+USR0140,User 140,HR,Coordinator,False,False,False,True,False,False
+USR0141,User 141,Engineering,Coordinator,False,False,False,True,False,False
+USR0142,User 142,HR,Coordinator,False,False,False,True,False,False
+USR0143,User 143,Legal,Specialist,False,False,False,True,False,False
+USR0144,User 144,Legal,Engineer,False,False,False,True,False,False
+USR0145,User 145,IT Ops,Specialist,False,False,False,True,False,False
+USR0146,User 146,Engineering,Coordinator,False,False,False,True,False,False
+USR0147,User 147,Finance,Coordinator,False,False,False,True,False,False
+USR0148,User 148,HR,Analyst,False,False,False,True,False,False
+USR0149,User 149,Finance,Director,False,False,False,True,False,False
+USR0150,User 150,DevOps,Manager,False,False,False,True,False,False
+USR0151,User 151,IT Ops,Analyst,False,False,False,True,False,False
+USR0152,User 152,Sales,Specialist,False,False,False,True,False,False
+USR0153,User 153,Sales,Specialist,False,False,False,True,False,False
+USR0154,User 154,IT Ops,Analyst,False,False,False,True,False,False
+USR0155,User 155,Legal,Manager,False,False,False,True,False,False
+USR0156,User 156,Engineering,Analyst,False,False,False,True,False,False
+USR0157,User 157,Engineering,Engineer,False,False,False,True,False,False
+USR0158,User 158,Finance,Engineer,False,False,False,True,False,False
+USR0159,User 159,Sales,Specialist,False,False,False,True,False,False
+USR0160,User 160,Legal,Director,False,False,False,True,False,False
+USR0161,User 161,Finance,Analyst,False,False,False,True,False,False
+USR0162,User 162,DevOps,Specialist,False,False,False,True,False,False
+USR0163,User 163,Legal,Specialist,False,False,False,True,False,False
+USR0164,User 164,HR,Coordinator,False,False,False,True,False,False
+USR0165,User 165,DevOps,Specialist,False,False,False,True,False,False
+USR0166,User 166,Legal,Director,False,False,False,True,False,False
+USR0167,User 167,Engineering,Director,False,False,False,True,False,False
+USR0168,User 168,Legal,Analyst,False,False,False,True,False,False
+USR0169,User 169,IT Ops,Director,False,False,False,True,False,False
+USR0170,User 170,Legal,Coordinator,False,False,False,True,False,False
+USR0171,User 171,HR,Analyst,False,False,False,True,False,False
+USR0172,User 172,DevOps,Analyst,False,False,False,True,False,False
+USR0173,User 173,Legal,Specialist,False,False,False,True,False,False
+USR0174,User 174,HR,Director,False,False,False,True,False,False
+USR0175,User 175,IT Ops,Coordinator,False,False,False,True,False,False
+USR0176,User 176,DevOps,Coordinator,False,False,False,True,False,False
+USR0177,User 177,Engineering,Analyst,False,False,False,True,False,False
+USR0178,User 178,Finance,Director,False,False,False,True,False,False
+USR0179,User 179,HR,Analyst,False,False,False,True,False,False
+USR0180,User 180,DevOps,Analyst,False,False,False,True,False,False
+USR0181,User 181,HR,Analyst,False,False,False,True,False,False
+USR0182,User 182,Legal,Engineer,False,False,False,True,False,False
+USR0183,User 183,Sales,Coordinator,False,False,False,True,False,False
+USR0184,User 184,IT Ops,Director,False,False,False,True,False,False
+USR0185,User 185,Finance,Engineer,False,False,False,True,False,False

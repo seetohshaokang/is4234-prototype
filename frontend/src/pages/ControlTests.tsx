@@ -1,95 +1,177 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PlayCircle, Clock } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import api from "../api/client";
 import Badge from "../components/Badge";
-import Card, { CardBody } from "../components/Card";
+import Card, { CardHeader, CardBody } from "../components/Card";
 
-interface Control {
+interface Check {
   id: string;
+  version: number;
   name: string;
-  test_id: string;
+  threshold_desc: string;
   test_frequency_days: number;
-  latest_result?: {
-    run_on: string;
-    outcome: string;
-    evidence_summary: string;
-    severity?: string;
-    metrics?: Record<string, unknown>;
-  };
+  defined_by: string;
+  params: Record<string, unknown>;
 }
 
-export default function ControlTests() {
-  const qc = useQueryClient();
-  const { data: controls = [], isLoading } = useQuery<Control[]>({
-    queryKey: ["controls"],
-    queryFn: () => api.get("/controls").then(r => r.data),
+interface Collector {
+  id: string;
+  check_id: string;
+  version: number;
+  status: string;
+  written_by: string;
+  submitted_on: string;
+  approved_by: string | null;
+  approved_on: string | null;
+}
+
+interface TestResult {
+  id: string;
+  control_id: string;
+  check_id: string;
+  check_version: number;
+  run_on: string;
+  outcome: string;
+  evidence_summary: string;
+  measured_value: number | null;
+}
+
+export default function ChecksCollectors() {
+  const { data: checks = [], isLoading: checksLoading } = useQuery<Check[]>({
+    queryKey: ["checks"],
+    queryFn: () => api.get("/checks").then(r => r.data),
   });
 
-  const runAll = useMutation({
-    mutationFn: () => api.post("/gate/run-all"),
-    onSuccess: () => qc.invalidateQueries(),
+  const { data: collectors = [], isLoading: collectorsLoading } = useQuery<Collector[]>({
+    queryKey: ["collectors"],
+    queryFn: () => api.get("/collectors").then(r => r.data),
   });
 
-  if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
+  const { data: testResults = [], isLoading: resultsLoading } = useQuery<TestResult[]>({
+    queryKey: ["test-results"],
+    queryFn: () => api.get("/test-results").then(r => r.data),
+  });
+
+  if (checksLoading || collectorsLoading || resultsLoading) {
+    return <div className="text-slate-400 text-sm">Loading…</div>;
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Control Tests</h1>
-          <p className="text-sm text-slate-500">Automated evidence tests — never tested = BLOCK.</p>
-        </div>
-        <button
-          data-tour="run-tests"
-          onClick={() => runAll.mutate()}
-          disabled={runAll.isPending}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md disabled:opacity-50 transition-colors"
-        >
-          <PlayCircle size={16} />
-          {runAll.isPending ? "Running…" : "Run All Tests"}
-        </button>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Checks &amp; Collectors</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Checks define what to measure; collectors are the approved scripts that run them.
+        </p>
       </div>
 
-      <div className="grid gap-4">
-        {controls.map(ctrl => (
-          <Card key={ctrl.id}>
-            <CardBody>
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-mono text-xs text-slate-400">{ctrl.id}</span>
-                    <span className="font-medium text-slate-800">{ctrl.name}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-slate-500">
-                    <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded">{ctrl.test_id}</span>
-                    <span className="flex items-center gap-1">
-                      <Clock size={11} /> every {ctrl.test_frequency_days}d
-                    </span>
-                  </div>
-                </div>
-                <div className="flex-shrink-0 text-right">
-                  {ctrl.latest_result ? (
-                    <div className="space-y-1">
-                      <Badge value={ctrl.latest_result.outcome} />
-                      {ctrl.latest_result.severity && (
-                        <div className="mt-1"><Badge value={ctrl.latest_result.severity} /></div>
-                      )}
-                      <div className="text-xs text-slate-400">{ctrl.latest_result.run_on}</div>
-                    </div>
-                  ) : (
-                    <Badge value="NEVER TESTED" className="bg-slate-100 text-slate-500 border-slate-200" />
-                  )}
-                </div>
-              </div>
-              {ctrl.latest_result?.evidence_summary && (
-                <div className="mt-3 text-xs text-slate-600 bg-slate-50 rounded p-2.5 border border-slate-100">
-                  {ctrl.latest_result.evidence_summary}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-        ))}
-      </div>
+      {/* Checks table */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-slate-700">Checks ({checks.length})</h2>
+        </CardHeader>
+        <CardBody className="p-0">
+          {checks.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">No checks defined.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check ID</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Version</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Name</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Threshold</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Frequency</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Defined By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {checks.map(c => (
+                  <tr key={`${c.id}-${c.version}`} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{c.id}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">v{c.version}</td>
+                    <td className="px-5 py-2.5 text-slate-700 font-medium">{c.name}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-600 max-w-xs">{c.threshold_desc}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-500">every {c.test_frequency_days}d</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{c.defined_by}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Collectors table */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-slate-700">Collectors ({collectors.length})</h2>
+        </CardHeader>
+        <CardBody className="p-0">
+          {collectors.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">No collectors submitted.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Collector ID</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check ID</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Version</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Submitted On</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Approved By</th>
+                </tr>
+              </thead>
+              <tbody>
+                {collectors.map(col => (
+                  <tr key={col.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{col.id}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{col.check_id}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">v{col.version}</td>
+                    <td className="px-5 py-2.5"><Badge value={col.status} /></td>
+                    <td className="px-5 py-2.5 text-xs text-slate-500">{col.submitted_on ?? "—"}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{col.approved_by ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardBody>
+      </Card>
+
+      {/* Latest test results */}
+      <Card>
+        <CardHeader>
+          <h2 className="text-sm font-semibold text-slate-700">Latest Test Results ({testResults.length})</h2>
+        </CardHeader>
+        <CardBody className="p-0">
+          {testResults.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">No test results yet.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Control ID</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check ID</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Run On</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Outcome</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Evidence Summary</th>
+                </tr>
+              </thead>
+              <tbody>
+                {testResults.map(r => (
+                  <tr key={r.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{r.control_id}</td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{r.check_id}</td>
+                    <td className="px-5 py-2.5 text-xs text-slate-500">{r.run_on}</td>
+                    <td className="px-5 py-2.5"><Badge value={r.outcome} /></td>
+                    <td className="px-5 py-2.5 text-xs text-slate-600 max-w-sm truncate">{r.evidence_summary}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }

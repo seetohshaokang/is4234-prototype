@@ -1,132 +1,103 @@
-import { Fragment, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import api from "../api/client";
-import { useAppStore } from "../store/useAppStore";
-import Badge from "../components/Badge";
 import Card, { CardBody } from "../components/Card";
 
-interface Claim {
+interface SCC {
   id: string;
-  text: string;
-  status: string;
-  support_state: string;
+  title: string;
   owner_id: string;
-  mappings: Array<{ control_id: string; approved_by: string }>;
-  latest_decision?: { decision: string } | null;
+  current_state: string;
+  active_version_id: string | null;
+  versions: Array<{ id: string; version: number; status: string }>;
+  rolling_uptime_pct: number | null;
 }
 
-export default function ClaimRegistry() {
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  const { actorId } = useAppStore();
-  const qc = useQueryClient();
+function stateBadgeClass(state: string) {
+  switch (state) {
+    case "UPHELD":     return "bg-green-100 text-green-700 border-green-200";
+    case "DOWN":       return "bg-red-100 text-red-700 border-red-200";
+    case "UNKNOWN":    return "bg-gray-100 text-gray-700 border-gray-200";
+    case "NOT_ACTIVE": return "bg-slate-100 text-slate-500 border-slate-200";
+    default:           return "bg-slate-100 text-slate-500 border-slate-200";
+  }
+}
 
-  const { data: claims = [], isLoading } = useQuery<Claim[]>({
-    queryKey: ["claims"],
-    queryFn: () => api.get("/claims").then(r => r.data),
-  });
+function StateBadge({ state }: { state: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${stateBadgeClass(state)}`}>
+      {state}
+    </span>
+  );
+}
 
-  const actMut = useMutation({
-    mutationFn: ({ id, action }: { id: string; action: "publish" | "withdraw" }) =>
-      api.post(`/claims/${id}/${action}`, { actor_id: actorId }),
-    onSuccess: () => {
-      qc.invalidateQueries();
-      setError("");
-    },
-    onError: (e: any) => setError(e.response?.data?.detail ?? "Action failed"),
+export default function SCCLibrary() {
+  const navigate = useNavigate();
+
+  const { data: sccs = [], isLoading } = useQuery<SCC[]>({
+    queryKey: ["sccs"],
+    queryFn: () => api.get("/sccs").then(r => r.data),
   });
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 
+  const latestVersion = (scc: SCC) => {
+    if (!scc.versions || scc.versions.length === 0) return "—";
+    const max = Math.max(...scc.versions.map(v => v.version));
+    return `v${max}`;
+  };
+
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-slate-900">Claim Registry</h1>
-      <p className="text-sm text-slate-500">Public security claims and their evidence linkage status.</p>
-
-      {error && (
-        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
-          {error}
-        </div>
-      )}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">SCC Library</h1>
+        <p className="text-sm text-slate-500 mt-0.5">
+          Security Citation Codes — measurable security assertions tracked like SLAs.
+        </p>
+      </div>
 
       <Card>
         <CardBody className="p-0">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="w-8 px-4"></th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500">ID</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500">Title</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500">Gate Verdict</th>
-                <th className="text-left px-4 py-3 text-xs font-medium text-slate-500">Support</th>
-              </tr>
-            </thead>
-            <tbody>
-              {claims.map(claim => (
-                <Fragment key={claim.id}>
+          {sccs.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-slate-400">
+              No SCCs found. Apply checkpoint CP1 to populate the library.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">SCC ID</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Title</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Current State</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Latest Version</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Rolling Uptime %</th>
+                  <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Owner</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sccs.map(scc => (
                   <tr
-                    className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer"
-                    onClick={() => setExpanded(expanded === claim.id ? null : claim.id)}
+                    key={scc.id}
+                    className="border-b border-slate-50 last:border-0 hover:bg-slate-50 cursor-pointer"
+                    onClick={() => navigate(`/sccs/${scc.id}`)}
                   >
-                    <td className="px-4 py-3 text-slate-400">
-                      {expanded === claim.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500 font-medium">{scc.id}</td>
+                    <td className="px-5 py-2.5 text-slate-800 font-medium">{scc.title}</td>
+                    <td className="px-5 py-2.5"><StateBadge state={scc.current_state} /></td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{latestVersion(scc)}</td>
+                    <td className="px-5 py-2.5 text-slate-600">
+                      {scc.rolling_uptime_pct != null ? (
+                        <span className={scc.rolling_uptime_pct >= 99 ? "text-green-700 font-medium" : "text-red-600 font-medium"}>
+                          {scc.rolling_uptime_pct.toFixed(1)}%
+                        </span>
+                      ) : "—"}
                     </td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{claim.id}</td>
-                    <td className="px-4 py-3 text-slate-700 font-medium">{claim.text.slice(0, 60)}</td>
-                    <td className="px-4 py-3"><Badge value={claim.status} /></td>
-                    <td className="px-4 py-3"><Badge value={claim.latest_decision?.decision ?? "PENDING"} /></td>
-                    <td className="px-4 py-3"><Badge value={claim.support_state} /></td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{scc.owner_id}</td>
                   </tr>
-                  {expanded === claim.id && (
-                    <tr className="bg-slate-50 border-b border-slate-100">
-                      <td colSpan={6} className="px-8 py-4">
-                        <div className="space-y-3">
-                          <div>
-                            <div className="text-xs font-medium text-slate-500 mb-1">Claim Text</div>
-                            <div className="text-sm text-slate-700 bg-white rounded border border-slate-200 p-3">{claim.text}</div>
-                          </div>
-                          {claim.mappings?.length > 0 && (
-                            <div>
-                              <div className="text-xs font-medium text-slate-500 mb-1">Mapped Controls</div>
-                              <div className="flex gap-2 flex-wrap">
-                                {claim.mappings.map(m => (
-                                  <span key={m.control_id} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded px-2 py-0.5 text-xs font-mono">
-                                    {m.control_id}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-slate-400">Owner: {claim.owner_id}</div>
-                            {claim.status === "published" ? (
-                              <button
-                                onClick={() => actMut.mutate({ id: claim.id, action: "withdraw" })}
-                                disabled={actMut.isPending}
-                                className="text-xs bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 rounded px-3 py-1.5 font-medium disabled:opacity-50"
-                              >
-                                Withdraw claim
-                              </button>
-                            ) : (
-                              <button
-                                onClick={() => actMut.mutate({ id: claim.id, action: "publish" })}
-                                disabled={actMut.isPending}
-                                className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded px-3 py-1.5 font-medium disabled:opacity-50"
-                              >
-                                Publish claim
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </Fragment>
-              ))}
-            </tbody>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          )}
         </CardBody>
       </Card>
     </div>

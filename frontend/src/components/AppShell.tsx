@@ -153,7 +153,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
             ))}
           </select>
           {currentPersona && currentPersona.role !== "public" && (
-            <div className="mt-1 text-xs text-slate-400">{currentPersona.name}</div>
+            <div className="mt-1 text-xs text-slate-400">{ROLE_LABELS[currentPersona.role] ?? currentPersona.name}</div>
           )}
         </div>
 

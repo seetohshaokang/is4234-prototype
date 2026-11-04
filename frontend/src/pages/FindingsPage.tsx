@@ -14,6 +14,7 @@ interface Finding {
   opened_on: string;
   closed_on: string | null;
   days_open: number | null;
+  level: number | null;
   source: string;
   title: string;
   description: string;
@@ -141,6 +142,7 @@ export default function FindingsPage() {
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Title</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Days Open</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed On</th>
@@ -158,6 +160,13 @@ export default function FindingsPage() {
                       <td className="px-5 py-2.5 text-slate-700 font-medium">{f.title}</td>
                       <td className="px-5 py-2.5"><SeverityBadge severity={f.severity} /></td>
                       <td className="px-5 py-2.5"><Badge value={f.status} /></td>
+                      <td className="px-5 py-2.5">
+                        {f.level ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border bg-purple-100 text-purple-700 border-purple-200">
+                            L{f.level}
+                          </span>
+                        ) : <span className="text-xs text-slate-300">—</span>}
+                      </td>
                       <td className="px-5 py-2.5 text-xs text-slate-500">
                         {f.days_open != null ? (
                           <span className={f.days_open > 60 ? "text-red-600 font-medium" : ""}>{f.days_open}d</span>

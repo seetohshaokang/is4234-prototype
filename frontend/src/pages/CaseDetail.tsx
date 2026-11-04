@@ -23,6 +23,15 @@ interface CaseFinding {
   level: number | null;
 }
 
+interface CaseEscalation {
+  id: number;
+  level: number;
+  assigned_to_role: string;
+  reason: string;
+  created_on: string;
+  status: string;
+}
+
 interface CaseNote {
   id: number;
   author_id: string;
@@ -66,6 +75,14 @@ export default function CaseDetail() {
     queryFn: () => api.get(`/findings/${id}`).then(r => r.data),
   });
 
+  const { data: caseEscalations = [] } = useQuery<CaseEscalation[]>({
+    queryKey: ["case-escalations", id],
+    queryFn: () => api.get("/escalations").then(r =>
+      (r.data as any[]).filter((e: any) => e.finding_id === id)
+    ),
+    enabled: !!id,
+  });
+
   const { data: notes = [] } = useQuery<CaseNote[]>({
     queryKey: ["case-notes", id],
     queryFn: () => api.get(`/findings/${id}/notes`).then(r => r.data),
@@ -74,12 +91,20 @@ export default function CaseDetail() {
 
   const statusMut = useMutation({
     mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["finding", id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finding", id] });
+      qc.invalidateQueries({ queryKey: ["case-escalations", id] });
+      qc.invalidateQueries({ queryKey: ["escalations"] });
+    },
   });
 
   const levelMut = useMutation({
     mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["finding", id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finding", id] });
+      qc.invalidateQueries({ queryKey: ["case-escalations", id] });
+      qc.invalidateQueries({ queryKey: ["escalations"] });
+    },
   });
 
   const noteMut = useMutation({
@@ -195,6 +220,7 @@ export default function CaseDetail() {
           <table className="w-full text-sm">
             <tbody>
               {ESCALATION_LADDER.map(row => {
+                const esc = caseEscalations.find(e => e.level === row.level);
                 const isCurrentLevel = finding.level === row.level;
                 const isPastLevel = finding.level !== null && row.level < finding.level;
                 return (
@@ -217,6 +243,9 @@ export default function CaseDetail() {
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-700">{row.role}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{row.action}</td>
+                    <td className="px-4 py-3 text-right">
+                      {esc && <Badge value={esc.status} />}
+                    </td>
                   </tr>
                 );
               })}

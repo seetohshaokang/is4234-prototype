@@ -16,7 +16,7 @@ from db import (
     CheckDefinition, Collector, CollectorStatus,
     Control, SCC, SCCVersion, SCCVersionControl, SCCVersionStatus, EvidenceType,
     ManualEvidence, CheckpointApplied,
-    Finding, FindingStatus,
+    Finding, FindingStatus, Escalation, EscalationStatus,
 )
 
 SNAP_DIR = Path("data/snapshots")
@@ -390,8 +390,20 @@ def seed_db() -> None:
         s.commit()
 
 
+LEVEL_ROLES = {
+    1: Role.CONTROL_OWNER,
+    2: Role.SECURITY_LEAD,
+    3: Role.DISCLOSURE_COMMITTEE,
+}
+LEVEL_REASONS = {
+    1: "Case picked up — control owner begins remediation",
+    2: "Escalated to security lead for review",
+    3: "Escalated to disclosure committee for formal decision",
+}
+
+
 def patch_case_statuses() -> None:
-    """Set a few cases to IN_REVIEW and RESOLVED for demo variety."""
+    """Set a few cases to IN_REVIEW and RESOLVED for demo variety, with escalation records."""
     from sqlmodel import select
     from db import get_session
     patches = {
@@ -400,16 +412,35 @@ def patch_case_statuses() -> None:
         "CASE_2018_005": FindingStatus.IN_REVIEW,
         "CASE_2019_006": FindingStatus.IN_REVIEW,
     }
+    # level to seed per case: IN_REVIEW cases get escalation records
+    escalation_levels = {
+        "CASE_2018_005": [1, 2],
+        "CASE_2019_006": [1],
+        "CASE_2017_002": [1, 2, 3],
+        "CASE_2017_004": [1],
+    }
     with get_session() as s:
         for fid, new_status in patches.items():
             f = s.get(Finding, fid)
-            if f:
-                f.status = new_status
-                if new_status == FindingStatus.RESOLVED:
-                    pass  # keep existing closed_on
-                elif new_status == FindingStatus.IN_REVIEW:
-                    f.closed_on = None
-                s.add(f)
+            if not f:
+                continue
+            f.status = new_status
+            if new_status == FindingStatus.IN_REVIEW:
+                f.closed_on = None
+            levels = escalation_levels.get(fid, [])
+            if levels:
+                f.level = levels[-1]
+            s.add(f)
+            for lvl in levels:
+                esc = Escalation(
+                    finding_id=fid,
+                    level=lvl,
+                    assigned_to_role=LEVEL_ROLES[lvl],
+                    reason=LEVEL_REASONS[lvl],
+                    created_on=f.opened_on,
+                    status=EscalationStatus.RESOLVED if lvl < levels[-1] else EscalationStatus.OPEN,
+                )
+                s.add(esc)
         s.commit()
 
 

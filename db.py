@@ -277,18 +277,14 @@ class ChangeRequest(SQLModel, table=True):
 class Escalation(SQLModel, table=True):
     __tablename__ = "escalation"
     id: Optional[int] = Field(default=None, primary_key=True)
-    sccversion_id: Optional[str] = Field(default=None, foreign_key="sccversion.id")
-    trigger: str                           # "scc_down" | "scc_unknown_14d" | "sla_missed" | "check_fail" | etc.
+    finding_id: str = Field(foreign_key="finding.id")
     level: int
-    requested_level: Optional[int] = None
     assigned_to_role: Role
-    assigned_to_id: Optional[str] = None
     reason: str
     created_on: date
     acknowledged_on: Optional[date] = None
     resolved_on: Optional[date] = None
     status: EscalationStatus = EscalationStatus.OPEN
-    independence_skips: Optional[str] = None  # JSON list
 
 
 class CommitteeResponse(SQLModel, table=True):

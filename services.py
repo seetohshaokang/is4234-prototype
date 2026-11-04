@@ -59,7 +59,6 @@ def _advance_to(session: Session, new_date: date, actor_id: str = "SYSTEM") -> d
     check_pending_deprecations(session, new_date, actor_id)
     run_due_checks(session, new_date, actor_id)
     rebuild_all_intervals(session, new_date)
-    fire_escalations(session, new_date, actor_id)
     return new_date
 
 
@@ -340,75 +339,42 @@ def _rebuild_intervals_for_version(session: Session, sv: SCCVersion, as_of: date
 
 # ── Escalation engine ────────────────────────────────────────────────────────
 
-def fire_escalations(session: Session, as_of: date, actor_id: str = "SYSTEM") -> None:
-    from engine.escalation import compute_new_escalations as _compute
-    people = [{"id": p.id, "role": p.role} for p in session.exec(select(Person)).all()]
-    scc_versions = list(session.exec(
-        select(SCCVersion).where(SCCVersion.status == SCCVersionStatus.ACTIVE)
-    ).all())
+LEVEL_ROLES = {
+    1: Role.CONTROL_OWNER,
+    2: Role.SECURITY_LEAD,
+    3: Role.DISCLOSURE_COMMITTEE,
+}
 
-    existing_escs = [
-        {"id": e.id, "sccversion_id": e.sccversion_id, "trigger": e.trigger,
-         "level": e.level, "requested_level": e.requested_level,
-         "status": e.status, "created_on": e.created_on, "acknowledged_on": e.acknowledged_on}
-        for e in session.exec(select(Escalation)).all()
-    ]
+LEVEL_REASONS = {
+    1: "Case picked up — control owner begins remediation",
+    2: "Escalated to security lead for review",
+    3: "Escalated to disclosure committee for formal decision",
+}
 
-    for sv in scc_versions:
-        maps = list(session.exec(
-            select(SCCVersionControl).where(SCCVersionControl.sccversion_id == sv.id)
-        ).all())
-        intervals = list(session.exec(
-            select(StateInterval).where(StateInterval.sccversion_id == sv.id)
-        ).all())
-        interval_dicts = [
-            {"state": i.state, "start": i.start, "end": i.end,
-             "possibly_since": i.possibly_since}
-            for i in intervals
-        ]
-        control_owner_ids = list({m.control_id for m in maps})
 
-        sv_dict = {"id": sv.id, "scc_id": sv.scc_id, "owner_id": sv.scc_id,
-                   "target_uptime_pct": sv.target_uptime_pct,
-                   "rolling_window_days": sv.rolling_window_days,
-                   "max_single_downtime_days": sv.max_single_downtime_days}
-
-        new_escs = _compute(sv_dict, interval_dicts, existing_escs, people, as_of,
-                            control_owner_ids=control_owner_ids)
-
-        for esc_data in new_escs:
-            supersedes = esc_data.pop("_supersedes", None)
-            esc = Escalation(
-                sccversion_id=sv.id,
-                trigger=esc_data.get("trigger", "unknown"),
-                level=esc_data["level"],
-                requested_level=esc_data.get("requested_level"),
-                assigned_to_role=Role(esc_data["assigned_to_role"]),
-                assigned_to_id=esc_data.get("assigned_to_id"),
-                reason=esc_data["reason"],
-                created_on=as_of,
-                status=EscalationStatus.OPEN,
-                independence_skips=json.dumps(esc_data.get("independence_skips", [])),
-            )
-            session.add(esc)
-            session.flush()
-            if supersedes:
-                old = session.get(Escalation, supersedes)
-                if old:
-                    old.status = EscalationStatus.SUPERSEDED
-                    session.add(old)
-            append_event(session, as_of, actor_id, "escalation_created", "escalation",
-                         str(esc.id), {"sccversion_id": sv.id, "level": esc.level,
-                                       "trigger": esc.trigger})
-        if new_escs:
-            session.commit()
-            # Refresh for next SCC
-            existing_escs = [
-                {"id": e.id, "sccversion_id": e.sccversion_id, "trigger": e.trigger,
-                 "level": e.level, "requested_level": e.requested_level,
-                 "status": e.status, "created_on": e.created_on, "acknowledged_on": e.acknowledged_on}
-                for e in session.exec(select(Escalation)).all()
-            ]
+def escalate_case(session: Session, finding_id: str, level: int, actor_id: str) -> Escalation:
+    as_of = get_clock(session)
+    f = session.get(Finding, finding_id)
+    if not f:
+        raise ValueError(f"Case {finding_id} not found")
+    if level not in LEVEL_ROLES:
+        raise ValueError("Level must be 1, 2, or 3")
+    esc = Escalation(
+        finding_id=finding_id,
+        level=level,
+        assigned_to_role=LEVEL_ROLES[level],
+        reason=LEVEL_REASONS[level],
+        created_on=as_of,
+        status=EscalationStatus.OPEN,
+    )
+    session.add(esc)
+    f.level = level
+    session.add(f)
+    session.flush()
+    append_event(session, as_of, actor_id, "escalation_created", "escalation",
+                 str(esc.id), {"finding_id": finding_id, "level": level})
+    session.commit()
+    return esc
 
 
 # ── Escalation actions ────────────────────────────────────────────────────────
@@ -461,7 +427,7 @@ def respond_escalation(session: Session, esc_id: int, actor_id: str,
     session.add(esc)
     session.flush()
     append_event(session, as_of, actor_id, "committee_response", "escalation", str(esc_id),
-                 {"decision": decision, "sccversion_id": esc.sccversion_id})
+                 {"decision": decision, "finding_id": esc.finding_id})
     session.commit()
     return resp
 
@@ -765,7 +731,6 @@ def apply_checkpoint(session: Session, cp_id: str) -> None:
     check_pending_deprecations(session, cur)
     run_due_checks(session, cur)
     rebuild_all_intervals(session, cur)
-    fire_escalations(session, cur)
 
 
 # ── Checkpoint scripts ────────────────────────────────────────────────────────

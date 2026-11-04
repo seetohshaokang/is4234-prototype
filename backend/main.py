@@ -25,8 +25,8 @@ from db import (
 )
 from services import (
     get_clock, set_clock, advance_clock,
-    run_due_checks, rebuild_all_intervals, fire_escalations,
-    ack_escalation, resolve_escalation, respond_escalation,
+    run_due_checks, rebuild_all_intervals,
+    escalate_case, ack_escalation, resolve_escalation, respond_escalation,
     create_change_request, approve_change_request, reject_change_request,
     approve_collector, submit_collector, apply_checkpoint, CHECKPOINTS,
 )
@@ -465,12 +465,12 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
         f.status = FindingStatus(body.status)
-        if body.status == "IN_REVIEW" and f.level is None:
-            f.level = 1
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
         session.add(f)
         session.commit()
+        if body.status == "IN_REVIEW" and f.level is None:
+            escalate_case(session, finding_id, 1, "SYSTEM")
         return {"ok": True, "status": body.status}
 
 
@@ -484,10 +484,11 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate):
             raise HTTPException(status_code=400, detail="Level must be 1, 2, or 3")
         if f.level is not None and body.level <= f.level:
             raise HTTPException(status_code=400, detail="Can only escalate to a higher level")
-        f.level = body.level
-        session.add(f)
-        session.commit()
-        return {"ok": True, "level": body.level}
+        try:
+            esc = escalate_case(session, finding_id, body.level, "SYSTEM")
+            return {"ok": True, "level": body.level, "escalation_id": esc.id}
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.get("/findings/{finding_id}/notes")
@@ -531,23 +532,27 @@ def list_escalations():
         escs = list(session.exec(
             select(Escalation).order_by(Escalation.created_on.desc())  # type: ignore[attr-defined]
         ).all())
+        finding_map = {f.id: f for f in session.exec(select(Finding)).all()}
+        control_map = {c.id: c for c in session.exec(select(Control)).all()}
         result = []
         for e in escs:
             responses = list(session.exec(
                 select(CommitteeResponse).where(CommitteeResponse.escalation_id == e.id)
             ).all())
+            f = finding_map.get(e.finding_id)
+            check_id = control_map[f.control_id].check_id if f and f.control_id in control_map else None
             result.append({
-                "id": e.id, "sccversion_id": e.sccversion_id,
-                "trigger": e.trigger, "level": e.level,
-                "requested_level": e.requested_level,
+                "id": e.id,
+                "finding_id": e.finding_id,
+                "finding_title": f.title if f else None,
+                "check_id": check_id,
+                "level": e.level,
                 "assigned_to_role": str(e.assigned_to_role),
-                "assigned_to_id": e.assigned_to_id,
                 "reason": e.reason,
                 "created_on": str(e.created_on),
                 "acknowledged_on": str(e.acknowledged_on) if e.acknowledged_on else None,
                 "resolved_on": str(e.resolved_on) if e.resolved_on else None,
                 "status": str(e.status),
-                "independence_skips": json.loads(e.independence_skips) if e.independence_skips else [],
                 "responses": [{"decision": str(r.decision), "rationale": r.rationale,
                                 "due_on": str(r.due_on) if r.due_on else None,
                                 "decided_by": r.decided_by,
@@ -584,11 +589,6 @@ def respond_escalation_route(esc_id: int, body: EscalationRespondBody,
             due = date.fromisoformat(body.due_on) if body.due_on else None
             resp = respond_escalation(session, esc_id, _actor(actor_id),
                                       body.decision, body.rationale, due)
-            if body.decision == "DISCLOSE":
-                esc = session.get(Escalation, esc_id)
-                if esc and esc.sccversion_id:
-                    _generate_negative_citation(session, esc.sccversion_id,
-                                                get_clock(session), _actor(actor_id))
             return {"id": resp.id, "decision": str(resp.decision)}
         except ValueError as e:
             raise HTTPException(400, str(e))

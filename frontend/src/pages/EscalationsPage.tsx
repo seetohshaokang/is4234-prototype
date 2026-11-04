@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
@@ -8,35 +9,38 @@ import Card, { CardHeader, CardBody } from "../components/Card";
 interface EscalationResponse {
   decision: string;
   rationale: string;
-  due_on: string;
+  due_on: string | null;
   decided_by: string;
   decided_on: string;
 }
 
 interface Escalation {
   id: number;
-  sccversion_id: string;
-  trigger: string;
+  finding_id: string;
+  finding_title: string | null;
+  check_id: string | null;
   level: number;
   assigned_to_role: string;
-  assigned_to_id: string;
   reason: string;
   created_on: string;
+  acknowledged_on: string | null;
+  resolved_on: string | null;
   status: string;
-  independence_skips: string[];
   responses: EscalationResponse[];
 }
 
 const DECISIONS = [
-  { value: "REMEDIATE",           label: "REMEDIATE — Fix the underlying issue" },
-  { value: "STOP_CITING",         label: "STOP_CITING — Withdraw the SCC from use" },
-  { value: "REQUEST_REEVALUATION",label: "REQUEST_REEVALUATION — Ask auditor to re-examine" },
-  { value: "DISCLOSE",            label: "DISCLOSE — Publicly disclose the downtime" },
+  { value: "REMEDIATE",            label: "REMEDIATE — Fix the underlying issue" },
+  { value: "STOP_CITING",          label: "STOP_CITING — Withdraw the SCC from use" },
+  { value: "REQUEST_REEVALUATION", label: "REQUEST_REEVALUATION — Ask auditor to re-examine" },
+  { value: "DISCLOSE",             label: "DISCLOSE — Publicly disclose the downtime" },
 ];
 
-function levelBadge(level: number) {
-  const cls = level >= 3
+function LevelBadge({ level }: { level: number }) {
+  const cls = level === 3
     ? "bg-purple-100 text-purple-700 border-purple-200"
+    : level === 2
+    ? "bg-orange-100 text-orange-700 border-orange-200"
     : "bg-blue-100 text-blue-700 border-blue-200";
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${cls}`}>
@@ -60,13 +64,13 @@ export default function EscalationsPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ["escalations"] });
 
   const ackMut = useMutation({
-    mutationFn: (id: number) => api.post(`/escalations/${id}/ack`),
+    mutationFn: (id: number) => api.post(`/escalations/${id}/ack`, null, { params: { actor_id: actorId } }),
     onSuccess: invalidate,
   });
 
   const respondMut = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: object }) =>
-      api.post(`/escalations/${id}/respond`, payload),
+      api.post(`/escalations/${id}/respond`, payload, { params: { actor_id: actorId } }),
     onSuccess: () => {
       invalidate();
       setRespondFor(null);
@@ -78,15 +82,15 @@ export default function EscalationsPage() {
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 
-  const openEscalations = escalations.filter(e => e.status === "OPEN");
-  const closedEscalations = escalations.filter(e => e.status !== "OPEN");
+  const open = escalations.filter(e => e.status === "OPEN");
+  const closed = escalations.filter(e => e.status !== "OPEN");
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Escalations</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Automatic escalations triggered when SCCs remain DOWN. L3+ require a formal decision.
+          Cases escalated for review. L3 escalations require a formal committee decision.
         </p>
       </div>
 
@@ -96,51 +100,57 @@ export default function EscalationsPage() {
         </div>
       )}
 
-      {/* Open escalations */}
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <h2 className="text-sm font-semibold text-slate-700">Open Escalations</h2>
-            <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{openEscalations.length}</span>
+            <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{open.length}</span>
           </div>
         </CardHeader>
         <CardBody className="p-0">
-          {openEscalations.length === 0 ? (
+          {open.length === 0 ? (
             <div className="px-5 py-8 text-center text-sm text-slate-400">No open escalations.</div>
           ) : (
             <div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100">
-                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">ID</th>
-                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">SCC Version</th>
+                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Case</th>
+                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check</th>
                     <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
-                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned Role</th>
-                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Trigger</th>
+                    <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned To</th>
                     <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Reason</th>
                     <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Created On</th>
                     <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {openEscalations.map(e => (
+                  {open.map(e => (
                     <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                      <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{e.id}</td>
-                      <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{e.sccversion_id}</td>
-                      <td className="px-5 py-2.5">{levelBadge(e.level)}</td>
-                      <td className="px-5 py-2.5 text-xs text-slate-500">{e.assigned_to_role?.replace(/_/g, " ")}</td>
-                      <td className="px-5 py-2.5 text-xs text-slate-500">{e.trigger}</td>
-                      <td className="px-5 py-2.5 text-xs text-slate-600 max-w-xs truncate">{e.reason}</td>
+                      <td className="px-5 py-2.5">
+                        <Link to={`/findings/${e.finding_id}`} className="font-mono text-xs text-blue-600 hover:text-blue-800">
+                          {e.finding_id}
+                        </Link>
+                        {e.finding_title && (
+                          <div className="text-xs text-slate-500 mt-0.5 max-w-xs truncate">{e.finding_title}</div>
+                        )}
+                      </td>
+                      <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{e.check_id ?? "—"}</td>
+                      <td className="px-5 py-2.5"><LevelBadge level={e.level} /></td>
+                      <td className="px-5 py-2.5 text-xs text-slate-600 capitalize">{e.assigned_to_role.replace(/_/g, " ")}</td>
+                      <td className="px-5 py-2.5 text-xs text-slate-500 max-w-xs truncate">{e.reason}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-400">{e.created_on}</td>
                       <td className="px-5 py-2.5">
                         <div className="flex gap-2">
-                          <button
-                            onClick={() => ackMut.mutate(e.id)}
-                            disabled={ackMut.isPending}
-                            className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
-                          >
-                            Ack
-                          </button>
+                          {e.status === "OPEN" && (
+                            <button
+                              onClick={() => ackMut.mutate(e.id)}
+                              disabled={ackMut.isPending}
+                              className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                            >
+                              Ack
+                            </button>
+                          )}
                           {e.level === 3 && (
                             <button
                               onClick={() => setRespondFor(respondFor === e.id ? null : e.id)}
@@ -170,9 +180,7 @@ export default function EscalationsPage() {
                         onChange={e => setForm(f => ({ ...f, decision: e.target.value }))}
                         className="w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500"
                       >
-                        {DECISIONS.map(d => (
-                          <option key={d.value} value={d.value}>{d.label}</option>
-                        ))}
+                        {DECISIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
                       </select>
                     </div>
                     <div>
@@ -187,9 +195,7 @@ export default function EscalationsPage() {
                         placeholder="Explain the basis for this decision…"
                       />
                       {form.rationale.length > 0 && form.rationale.length < 50 && (
-                        <div className="text-xs text-amber-600 mt-1">
-                          {50 - form.rationale.length} more characters required
-                        </div>
+                        <div className="text-xs text-amber-600 mt-1">{50 - form.rationale.length} more characters required</div>
                       )}
                     </div>
                     <div>
@@ -227,33 +233,34 @@ export default function EscalationsPage() {
         </CardBody>
       </Card>
 
-      {/* All escalations history */}
-      {closedEscalations.length > 0 && (
+      {closed.length > 0 && (
         <Card>
           <CardHeader>
-            <h2 className="text-sm font-semibold text-slate-500">Closed Escalations ({closedEscalations.length})</h2>
+            <h2 className="text-sm font-semibold text-slate-500">Closed Escalations ({closed.length})</h2>
           </CardHeader>
           <CardBody className="p-0">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">ID</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">SCC Version</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Case</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned Role</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Reason</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned To</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Created On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {closedEscalations.map(e => (
-                  <tr key={e.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 opacity-70">
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{e.id}</td>
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{e.sccversion_id}</td>
-                    <td className="px-5 py-2.5">{levelBadge(e.level)}</td>
-                    <td className="px-5 py-2.5 text-xs text-slate-500">{e.assigned_to_role?.replace(/_/g, " ")}</td>
-                    <td className="px-5 py-2.5 text-xs text-slate-600 max-w-xs truncate">{e.reason}</td>
+                {closed.map(e => (
+                  <tr key={e.id} className="border-b border-slate-50 last:border-0 opacity-60">
+                    <td className="px-5 py-2.5">
+                      <Link to={`/findings/${e.finding_id}`} className="font-mono text-xs text-blue-500 hover:text-blue-700">
+                        {e.finding_id}
+                      </Link>
+                    </td>
+                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{e.check_id ?? "—"}</td>
+                    <td className="px-5 py-2.5"><LevelBadge level={e.level} /></td>
+                    <td className="px-5 py-2.5 text-xs text-slate-500 capitalize">{e.assigned_to_role.replace(/_/g, " ")}</td>
                     <td className="px-5 py-2.5 text-xs text-slate-400">{e.created_on}</td>
                     <td className="px-5 py-2.5"><Badge value={e.status} /></td>
                   </tr>

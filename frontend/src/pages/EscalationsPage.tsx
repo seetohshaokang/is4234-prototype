@@ -52,9 +52,7 @@ function EscalationTable({ escalations, dimmed, onSelect }: { escalations: Escal
         {escalations.map(e => (
           <tr key={e.id} className={`border-b border-slate-50 last:border-0 ${dimmed ? "opacity-50" : "hover:bg-slate-50"}`}>
             <td className="px-5 py-2.5">
-              <Link to={`/findings/${e.finding_id}`} className="font-mono text-xs text-blue-600 hover:text-blue-800 font-medium">
-                {e.finding_id}
-              </Link>
+              <span className="font-mono text-xs text-slate-600 font-medium">{e.finding_id}</span>
               {e.finding_title && (
                 <div className="text-xs text-slate-500 mt-0.5 max-w-[180px] truncate">{e.finding_title}</div>
               )}

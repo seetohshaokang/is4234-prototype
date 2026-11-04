@@ -1,10 +1,10 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   Library, FlaskConical,
   AlertTriangle, GitBranch, BookOpen, Info,
-  CalendarDays, CircleHelp, GitPullRequest, Search, RotateCcw,
+  CircleHelp, GitPullRequest, Search,
 } from "lucide-react";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
@@ -33,8 +33,7 @@ const TOUR_KEY = "scc-tour-seen";
 const COACH_KEY = "scc-coach-step";
 
 export default function AppShell({ children }: { children: ReactNode }) {
-  const { actorId, simDate, setActor, setSimDate } = useAppStore();
-  const [jumpDate, setJumpDate] = useState("");
+  const { actorId, setActor } = useAppStore();
   const [showWelcome, setShowWelcome] = useState(
     () => !localStorage.getItem(TOUR_KEY)
   );
@@ -43,7 +42,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     return saved !== null ? Number(saved) : null;
   });
   const navigate = useNavigate();
-  const qc = useQueryClient();
 
   const setCoach = (i: number | null) => {
     setCoachStep(i);
@@ -73,40 +71,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.get("/personas").then(r => r.data),
   });
 
-  const { data: clock } = useQuery<{ date: string }>({
-    queryKey: ["clock"],
-    queryFn: () => api.get("/clock").then(r => r.data),
-  });
-
-  useEffect(() => {
-    if (clock?.date) setSimDate(clock.date);
-  }, [clock?.date]);
-
-  const advanceMut = useMutation({
-    mutationFn: () => api.post("/clock/advance", { days: 1 }),
-    onSuccess: (res) => {
-      setSimDate(res.data.date);
-      qc.invalidateQueries();
-    },
-  });
-
-  const resetMut = useMutation({
-    mutationFn: () => api.post("/reset"),
-    onSuccess: () => {
-      qc.invalidateQueries();
-      api.get("/clock").then(r => setSimDate(r.data.date));
-    },
-  });
-
-  const setClockMut = useMutation({
-    mutationFn: (d: string) => api.post("/clock/set", { date: d }),
-    onSuccess: (res) => {
-      setSimDate(res.data.date);
-      qc.invalidateQueries();
-    },
-  });
-
-  // Build persona list including PUBLIC option
   const allPersonas: Array<{ id: string; name: string; role: string; title: string }> = [
     { id: "PUBLIC", name: "Public (no role)", role: "public", title: "" },
     ...personas,
@@ -147,50 +111,6 @@ export default function AppShell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
         </nav>
-
-        {/* Sim Clock + Reset — internal only */}
-        {!isPublic && (
-          <div data-tour="clock" className="border-t border-slate-700 px-4 py-3">
-            <div className="flex items-center justify-between mb-1">
-              <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                <CalendarDays size={13} />
-                <span>Sim date</span>
-              </div>
-              <button
-                onClick={() => resetMut.mutate()}
-                disabled={resetMut.isPending}
-                title="Reset and re-seed database"
-                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50"
-              >
-                <RotateCcw size={11} />
-                Reset
-              </button>
-            </div>
-            <div className="text-white font-mono text-sm mb-2">{simDate}</div>
-            <button
-              onClick={() => advanceMut.mutate()}
-              disabled={advanceMut.isPending}
-              className="w-full text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded px-2 py-1 transition-colors disabled:opacity-50"
-            >
-              +1 day
-            </button>
-            <div className="flex gap-1 mt-1">
-              <input
-                type="date"
-                value={jumpDate}
-                onChange={e => setJumpDate(e.target.value)}
-                className="flex-1 min-w-0 bg-slate-800 text-slate-200 text-xs rounded border border-slate-600 px-1.5 py-1 focus:outline-none focus:border-blue-500"
-              />
-              <button
-                onClick={() => jumpDate && setClockMut.mutate(jumpDate)}
-                disabled={!jumpDate || setClockMut.isPending}
-                className="text-xs bg-slate-700 hover:bg-slate-600 text-slate-200 rounded px-2 py-1 transition-colors disabled:opacity-50"
-              >
-                Jump
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Persona switcher */}
         <div data-tour="role" className="border-t border-slate-700 px-4 py-3">
@@ -238,9 +158,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
               assertions tracked like SLAs, with automated evidence collection and citation generation.
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              This POC is built around the NimbusWatch case study — the checkpoints walk
-              that company's timeline from 2017 to 2020, and the actions you can take along
-              the way show how a production version would behave.
+              This POC is built around the SolarWinds case study — the data walks that company's
+              security posture timeline, and the actions you can take show how a production version
+              would behave.
             </p>
             <p className="mt-2 text-sm text-slate-600">
               Want a guided demo of the case study, or a quick tour of each tab?

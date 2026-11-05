@@ -17,8 +17,6 @@ const steps: DriveStep[] = [
       title: "Welcome to Disclosure Gate",
       description:
         "A proof-of-concept disclosure gate built around the NimbusWatch case study (2017–2020). Checkpoint buttons walk that company's timeline; everything else lets you inject your own events — a preview of how a production version would behave.",
-      side: "over",
-      align: "center",
     },
   },
   {
@@ -129,8 +127,6 @@ const steps: DriveStep[] = [
     popover: {
       title: "You're set",
       description: "Start at CP1 and walk the story, injecting as you go. The full playbook — including a verification checklist — is in DEMO-GUIDE.md. Reopen this tour anytime with the ? button at the bottom of the sidebar.",
-      side: "over",
-      align: "center",
     },
   },
 ];

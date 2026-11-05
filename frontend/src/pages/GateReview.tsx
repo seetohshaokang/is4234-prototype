@@ -22,8 +22,6 @@ interface ChangeRequest {
 const inputCls =
   "w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500";
 
-const ALLOWED_ROLES = ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"];
-
 export default function ChangeRequests() {
   const { actorId } = useAppStore();
   const qc = useQueryClient();

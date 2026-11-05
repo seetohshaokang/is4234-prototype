@@ -2,10 +2,12 @@
 
 import json
 from datetime import date
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlmodel import select
 
@@ -35,6 +37,7 @@ from audit import verify_chain, append_event
 from seed import seed_db, generate_snapshots, apply_all_checkpoints
 
 app = FastAPI(title="SCC Library API", version="1.0.0")
+router = APIRouter()
 create_tables()
 
 app.add_middleware(
@@ -164,13 +167,13 @@ def _current_state_on(intervals: list[dict], as_of: date) -> str:
 
 # ── Clock ─────────────────────────────────────────────────────────────────────
 
-@app.get("/clock")
+@router.get("/clock")
 def get_clock_route():
     with get_session() as session:
         return {"date": str(get_clock(session))}
 
 
-@app.post("/clock/set")
+@router.post("/clock/set")
 def set_clock_route(body: ClockSet, actor_id: str = "SYSTEM"):
     with get_session() as session:
         d = date.fromisoformat(body.date)
@@ -178,7 +181,7 @@ def set_clock_route(body: ClockSet, actor_id: str = "SYSTEM"):
         return {"date": str(d)}
 
 
-@app.post("/clock/advance")
+@router.post("/clock/advance")
 def advance_clock_route(body: AdvanceDays, actor_id: str = "SYSTEM"):
     with get_session() as session:
         new_date = advance_clock(session, body.days, _actor(actor_id))
@@ -187,7 +190,7 @@ def advance_clock_route(body: AdvanceDays, actor_id: str = "SYSTEM"):
 
 # ── Personas ──────────────────────────────────────────────────────────────────
 
-@app.get("/personas")
+@router.get("/personas")
 def get_personas():
     with get_session() as session:
         people = list(session.exec(select(Person)).all())
@@ -197,7 +200,7 @@ def get_personas():
 
 # ── SCCs ──────────────────────────────────────────────────────────────────────
 
-@app.get("/sccs")
+@router.get("/sccs")
 def list_sccs():
     with get_session() as session:
         as_of = get_clock(session)
@@ -231,7 +234,7 @@ def list_sccs():
         return result
 
 
-@app.get("/sccs/{scc_id}")
+@router.get("/sccs/{scc_id}")
 def get_scc(scc_id: str):
     with get_session() as session:
         as_of = get_clock(session)
@@ -275,7 +278,7 @@ def get_scc(scc_id: str):
 
 # ── Controls & check runs ─────────────────────────────────────────────────────
 
-@app.get("/controls")
+@router.get("/controls")
 def list_controls():
     with get_session() as session:
         controls = list(session.exec(select(Control)).all())
@@ -295,7 +298,7 @@ def list_controls():
         return result
 
 
-@app.get("/test-results")
+@router.get("/test-results")
 def list_test_results(control_id: Optional[str] = None, limit: int = 50):
     with get_session() as session:
         q = select(TestResult).order_by(TestResult.run_on.desc())  # type: ignore[attr-defined]
@@ -312,7 +315,7 @@ def list_test_results(control_id: Optional[str] = None, limit: int = 50):
 
 # ── Checks & Collectors ───────────────────────────────────────────────────────
 
-@app.get("/checks")
+@router.get("/checks")
 def list_checks():
     with get_session() as session:
         defs = list(session.exec(select(CheckDefinition)).all())
@@ -324,7 +327,7 @@ def list_checks():
                 for d in defs]
 
 
-@app.get("/collectors")
+@router.get("/collectors")
 def list_collectors():
     with get_session() as session:
         cols = list(session.exec(select(Collector)).all())
@@ -336,7 +339,7 @@ def list_collectors():
                 for c in cols]
 
 
-@app.post("/collectors")
+@router.post("/collectors")
 def submit_collector_route(body: CollectorSubmitBody, actor_id: str = "P-PRIYA"):
     with get_session() as session:
         col = submit_collector(session, body.check_id, body.version,
@@ -344,7 +347,7 @@ def submit_collector_route(body: CollectorSubmitBody, actor_id: str = "P-PRIYA")
         return {"id": col.id, "status": str(col.status)}
 
 
-@app.post("/collectors/{collector_id}/approve")
+@router.post("/collectors/{collector_id}/approve")
 def approve_collector_route(collector_id: str, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -356,7 +359,7 @@ def approve_collector_route(collector_id: str, actor_id: str = "P-REYES"):
 
 # ── Change Requests ───────────────────────────────────────────────────────────
 
-@app.get("/change-requests")
+@router.get("/change-requests")
 def list_change_requests():
     with get_session() as session:
         crs = list(session.exec(select(ChangeRequest)).all())
@@ -370,7 +373,7 @@ def list_change_requests():
                 for cr in crs]
 
 
-@app.post("/change-requests")
+@router.post("/change-requests")
 def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-GRANT"):
     with get_session() as session:
         try:
@@ -381,7 +384,7 @@ def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-GRAN
             raise HTTPException(403, str(e))
 
 
-@app.post("/change-requests/{cr_id}/approve")
+@router.post("/change-requests/{cr_id}/approve")
 def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
                                   actor_id: str = "P-REYES"):
     with get_session() as session:
@@ -395,7 +398,7 @@ def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
             raise HTTPException(400, str(e))
 
 
-@app.post("/change-requests/{cr_id}/reject")
+@router.post("/change-requests/{cr_id}/reject")
 def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -407,7 +410,7 @@ def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P
 
 # ── Findings ──────────────────────────────────────────────────────────────────
 
-@app.get("/findings")
+@router.get("/findings")
 def list_findings(status: Optional[str] = None):
     with get_session() as session:
         as_of = get_clock(session)
@@ -427,7 +430,7 @@ def list_findings(status: Optional[str] = None):
                 for f in findings]
 
 
-@app.get("/findings/{finding_id}")
+@router.get("/findings/{finding_id}")
 def get_finding(finding_id: str):
     with get_session() as session:
         as_of = get_clock(session)
@@ -454,7 +457,7 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
     "CLOSED":    [],
 }
 
-@app.patch("/findings/{finding_id}/status")
+@router.patch("/findings/{finding_id}/status")
 def update_finding_status(finding_id: str, body: CaseStatusUpdate):
     with get_session() as session:
         as_of = get_clock(session)
@@ -474,7 +477,7 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
         return {"ok": True, "status": body.status}
 
 
-@app.patch("/findings/{finding_id}/level")
+@router.patch("/findings/{finding_id}/level")
 def update_finding_level(finding_id: str, body: CaseLevelUpdate):
     with get_session() as session:
         f = session.get(Finding, finding_id)
@@ -491,7 +494,7 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate):
             raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.get("/findings/{finding_id}/notes")
+@router.get("/findings/{finding_id}/notes")
 def list_case_notes(finding_id: str):
     with get_session() as session:
         notes = list(session.exec(
@@ -510,7 +513,7 @@ def list_case_notes(finding_id: str):
         ]
 
 
-@app.post("/findings/{finding_id}/notes")
+@router.post("/findings/{finding_id}/notes")
 def add_case_note(finding_id: str, body: CaseNoteCreate):
     with get_session() as session:
         f = session.get(Finding, finding_id)
@@ -526,7 +529,7 @@ def add_case_note(finding_id: str, body: CaseNoteCreate):
 
 # ── Escalations ───────────────────────────────────────────────────────────────
 
-@app.get("/escalations")
+@router.get("/escalations")
 def list_escalations():
     with get_session() as session:
         escs = list(session.exec(
@@ -561,7 +564,7 @@ def list_escalations():
         return result
 
 
-@app.post("/escalations/{esc_id}/ack")
+@router.post("/escalations/{esc_id}/ack")
 def ack_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
     with get_session() as session:
         try:
@@ -571,7 +574,7 @@ def ack_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
             raise HTTPException(404, str(e))
 
 
-@app.post("/escalations/{esc_id}/resolve")
+@router.post("/escalations/{esc_id}/resolve")
 def resolve_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
     with get_session() as session:
         try:
@@ -581,7 +584,7 @@ def resolve_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
             raise HTTPException(404, str(e))
 
 
-@app.post("/escalations/{esc_id}/respond")
+@router.post("/escalations/{esc_id}/respond")
 def respond_escalation_route(esc_id: int, body: EscalationRespondBody,
                               actor_id: str = "P-OKAFOR"):
     with get_session() as session:
@@ -629,7 +632,7 @@ def _generate_negative_citation(session, sccversion_id: str, as_of: date, issued
 
 # ── Citations ─────────────────────────────────────────────────────────────────
 
-@app.get("/citations")
+@router.get("/citations")
 def list_citations():
     with get_session() as session:
         cits = list(session.exec(select(IssuedCitation)).all())
@@ -642,7 +645,7 @@ def list_citations():
                 for c in cits]
 
 
-@app.post("/citations/generate")
+@router.post("/citations/generate")
 def generate_citation(body: CitationGenerateBody):
     with get_session() as session:
         sv = session.get(SCCVersion, body.sccversion_id)
@@ -683,7 +686,7 @@ def generate_citation(body: CitationGenerateBody):
                 "target_met": met, "record_hash": record_hash}
 
 
-@app.post("/resolve")
+@router.post("/resolve")
 def resolve_citation(body: ResolveBody):
     with get_session() as session:
         if body.citation_string:
@@ -750,7 +753,7 @@ def _parse_citation_string(s: str):
 
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
-@app.get("/audit")
+@router.get("/audit")
 def list_audit(limit: int = 100):
     with get_session() as session:
         events = list(session.exec(
@@ -765,7 +768,7 @@ def list_audit(limit: int = 100):
                 for e in events]
 
 
-@app.get("/audit/verify")
+@router.get("/audit/verify")
 def verify_audit():
     with get_session() as session:
         ok, msg = verify_chain(session)
@@ -774,14 +777,14 @@ def verify_audit():
 
 # ── Checkpoints ───────────────────────────────────────────────────────────────
 
-@app.get("/checkpoints")
+@router.get("/checkpoints")
 def list_checkpoints():
     with get_session() as session:
         applied = {r.cp_id for r in session.exec(select(CheckpointApplied)).all()}
         return {"available": list(CHECKPOINTS.keys()), "applied": list(applied)}
 
 
-@app.post("/checkpoints/{cp_id}/apply")
+@router.post("/checkpoints/{cp_id}/apply")
 def apply_checkpoint_route(cp_id: str):
     with get_session() as session:
         if cp_id not in CHECKPOINTS:
@@ -792,7 +795,7 @@ def apply_checkpoint_route(cp_id: str):
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
-@app.post("/reset")
+@router.post("/reset")
 def reset_db():
     from db import engine
     from sqlmodel import SQLModel
@@ -806,7 +809,7 @@ def reset_db():
 
 # ── SLA ───────────────────────────────────────────────────────────────────────
 
-@app.get("/sccs/{scc_id}/versions/{version_id}/sla")
+@router.get("/sccs/{scc_id}/versions/{version_id}/sla")
 def get_scc_sla(scc_id: str, version_id: str,
                 period_from: Optional[str] = None, period_to: Optional[str] = None):
     with get_session() as session:
@@ -828,3 +831,23 @@ def get_scc_sla(scc_id: str, version_id: str,
             "active_days": days, "target_met": met,
             "target_uptime_pct": sv.target_uptime_pct,
         }
+
+
+# ── Mount API + serve frontend SPA ────────────────────────────────────────────
+
+app.include_router(router, prefix="/api")
+
+DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str):
+    if full_path.startswith("api/"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if DIST_DIR.is_dir():
+        candidate = DIST_DIR / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(DIST_DIR / "index.html")
+    return JSONResponse({"detail": "Frontend not built — run `npm run build` in frontend/"},
+                        status_code=404)

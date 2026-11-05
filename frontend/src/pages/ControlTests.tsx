@@ -4,8 +4,6 @@ import { X } from "lucide-react";
 import api from "../api/client";
 import Badge from "../components/Badge";
 
-interface Persona { id: string; name: string; }
-
 interface Check {
   id: string;
   version: number;
@@ -269,11 +267,6 @@ export default function ChecksCollectors() {
   const [search, setSearch] = useState("");
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
 
-  const { data: personas = [] } = useQuery<Persona[]>({
-    queryKey: ["personas"],
-    queryFn: () => api.get("/personas").then(r => r.data),
-  });
-
   const { data: checks = [], isLoading: checksLoading } = useQuery<Check[]>({
     queryKey: ["checks"],
     queryFn: () => api.get("/checks").then(r => r.data),
@@ -283,8 +276,6 @@ export default function ChecksCollectors() {
     queryKey: ["test-results"],
     queryFn: () => api.get("/test-results").then(r => r.data),
   });
-
-  const resolveName = (id: string) => personas.find(p => p.id === id)?.name ?? id;
 
   if (checksLoading || resultsLoading) {
     return <div className="text-slate-400 text-sm">Loading…</div>;

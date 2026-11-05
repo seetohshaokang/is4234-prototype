@@ -1,3 +1,19 @@
+/**
+ * Guided demo script — a step-by-step walkthrough of the SCC Library app.
+ *
+ * Entering a step navigates the app to the page it describes (`nav`), so the
+ * user is always looking at the screen being explained. The seeded world is a
+ * finished timeline (sim date 2020-12-14): SCC-07 is DOWN right now — the one
+ * live failure to explore — with its case open on the Cases page.
+ *
+ * Fields:
+ *   nav      — route the app jumps to when this step opens
+ *   story    — what you're looking at
+ *   gate     — what you can change on this screen
+ *   tries    — suggested exercises (nav jumps within the step's section)
+ *   takeaway — why this piece exists
+ */
+
 export interface DemoTry {
   label: string;
   nav?: string; // optional page to jump to for this action
@@ -5,216 +21,149 @@ export interface DemoTry {
 }
 
 export interface DemoStep {
-  cp?: string;      // checkpoint applied when this step is entered
+  cp?: string;      // checkpoint applied when this step is entered (unused)
+  nav?: string;     // route to open when this step is entered
   title: string;
-  date: string;
-  story: string;    // what just happened in the case study
-  gate: string;     // what the gate did about it
-  tries: DemoTry[]; // suggested things for the user to play with
+  date: string;     // short tag shown top-right of the step
+  story: string;    // what you're looking at
+  gate: string;     // what you can change on this screen
+  tries: DemoTry[]; // suggested exercises
   takeaway: string; // the "so what"
 }
 
 export const DEMO_STEPS: DemoStep[] = [
   {
-    title: "Welcome — how this works",
-    date: "Before the story",
+    title: "How to use this guide",
+    date: "Intro",
+    nav: "/sccs",
     story:
-      "This guided demo walks the NimbusWatch case study checkpoint by checkpoint. At each stop you'll see what happened, what the gate caught, and a few things to play around with.",
+      "The SCC Library tracks security assertions the way SLAs track uptime: each Security Citation Code is a measurable claim ('admin accounts are under 10%', 'every completed month ≥ 99.9% availability') with its state computed from evidence — not declared by anyone. The data is inspired by the SolarWinds case and 100% synthetic.",
     gate:
-      "Nothing blocks you — the app stays fully interactive. Explore each page, inject events, then press Next when ready.",
+      "Each step jumps you to the page it explains — you're on the Library now. The persona switcher at the bottom of the sidebar decides your role; buttons and permissions follow it.",
     tries: [
-      { label: "Open the Dashboard for the current overview", nav: "/" },
-      { label: "Or just press Next to start the story (CP1)" },
+      { label: "Watch the persona switcher as you go — it changes what you're allowed to touch" },
     ],
     takeaway:
-      "Rule of thumb: checkpoints move the story; everything else is you injecting — the engine reacts the same either way.",
+      "A claim isn't believed or disbelieved here — it's measured, and the measurement is always on display.",
   },
   {
-    cp: "CP1",
-    title: "CP1 — Claims drafted, first tests fail",
-    date: "2017-12-01",
+    title: "The Library — the claims themselves",
+    date: "This page",
+    nav: "/sccs",
     story:
-      "Five security claims are drafted for the public website. The gate runs its first evidence tests — and AC-01 (least privilege), IA-01 (password policy) and SA-01 (secure SDLC) all FAIL.",
+      "One row per assertion. Read Current State against Rolling Uptime %: state is what the claim is right now, while the percentage is the share of its whole tracked life spent UPHELD — that's why they can disagree. SCC-07 is DOWN today yet its 94.6% is still the library's best: it spent almost three years fully green before September 2020's 99.71% broke the every-month rule — and a failed month never leaves the record, so every check since has failed too. Meanwhile SCC-01/02/03 read UPHELD on ~3% — passing right now, after spending almost their entire record failing.",
     gate:
-      "C-01, C-02, C-03 are BLOCKED by failing tests and auto-opened findings. C-04 is ESCALATE (no control mapped). Only C-05 approves, covered by manual evidence.",
+      "This page is read-only — deliberately. Nobody edits a claim's state directly; states are computed from evidence. What you can change is which row you open to inspect.",
     tries: [
-      {
-        label: "Try to override C-01 as T. Grant — watch it get rejected (he owns the claim)",
-        nav: "/gate",
-      },
-      {
-        label: "Switch role to M. Okafor, retry the override — it succeeds (BLOCK → ESCALATE)",
-      },
-      { label: "Check the 3 auto-opened findings", nav: "/findings" },
+      { label: "Open SCC-07 — the only claim failing right now", nav: "/sccs/SCC-07" },
+      { label: "Notice SCC-04 is missing entirely — the auditor rejected it as unmeasurable at creation" },
     ],
     takeaway:
-      "In the real case, claims like this went public anyway. Here they can't get past the gate without a documented, independent exception.",
+      "State is a snapshot; uptime is the résumé. You can fail today with a clean history — or pass today after years of lying.",
   },
   {
-    cp: "CP1b",
-    title: "CP1b — Findings are now live objects",
-    date: "2017-12-01",
+    title: "SCC detail — a claim you can watch failing",
+    date: "This page",
+    nav: "/sccs/SCC-07",
     story:
-      "The failed tests didn't just produce a report — three HIGH findings are now open, and escalations have already fired to the control owner (L1) and security lead (L2).",
+      "Everything about one assertion: the exact wording, the version chain, a day-by-day uptime heatmap, and state intervals with cause notes. SCC-07's rule is ≥99.9% in each completed month — September 2020 came in at 99.71%, so the claim went DOWN on Oct-16 and can't recover — the check re-reads every completed month, and the bad one is permanent. That's why 2020 turns red mid-October and every year after is a solid red wall.",
     gate:
-      "Open findings block their mapped claims (rule R3) and start ageing toward higher escalation levels.",
+      "Also read-only — it's the record. But watch what it records: when a claim is reworded, a new version starts and the old one keeps its history — including whether it was failing when it was replaced.",
     tries: [
-      {
-        label:
-          "Escalations → note F-2017-003 has TWO L2 rows: one is its L1 bumped up — Priya raised the finding and Leo owns it, so every control owner was conflicted (independence skip); the other is the normal L2 to Grant",
-        nav: "/escalations",
-      },
-      {
-        label: "Compare F-2017-001/002: their L1 went to Leo because only Priya was conflicted",
-        nav: "/escalations",
-      },
-      {
-        label: "Findings → expand one → propose a risk acceptance; approve it as M. Okafor",
-        nav: "/findings",
-      },
+      { label: "Open SCC-02 — v1 is SUPERSEDED and carries the permanent red 'superseded while DOWN' flag", nav: "/sccs/SCC-02" },
+      { label: "Open SCC-05 — DEPRECATED: a wall of grey, UNKNOWN its whole life — an attestation that was never measurable", nav: "/sccs/SCC-05" },
     ],
     takeaway:
-      "Escalations route around conflicts of interest: whoever raised or owns the problem never gets to quietly handle its alarm.",
+      "Versioning lets claims evolve honestly — you can change the wording, never the track record.",
   },
   {
-    cp: "CP2",
-    title: "CP2 — The override expires",
-    date: "2018-03-02",
+    title: "Security Checks — where evidence comes from",
+    date: "This page",
+    nav: "/checks",
     story:
-      "Time passes. Whatever override was granted on C-01 reaches its expiry date.",
+      "Checks are the automated tests behind each control: a threshold, a cadence, a data source. Open T-UPTIME — its latest result is the FAIL that keeps SCC-07 DOWN: the availability rule requires every completed month at 99.9%, September's 99.71% never leaves the record, so every run since has failed.",
     gate:
-      "Expired overrides lose their effect — C-01 snaps straight back to BLOCK. Nothing needed to 'decide' to re-block it; the exception was time-boxed.",
+      "Nothing here is editable — checks and collectors are the measurement machinery, fixed by the auditor's approval, not by the team being measured.",
     tries: [
-      { label: "Gate Review → watch C-01's verdict flip back to BLOCK", nav: "/gate" },
-      {
-        label: "Make your own override with a short expiry, then Jump the clock past it and watch it expire",
-      },
+      { label: "Open T-UPTIME → read the pass rule and the failing September value" },
+      { label: "Compare T-VPNDEVICE and T-LEASTPRIV — the checks that kept SCC-01 down for years before passing in November" },
     ],
     takeaway:
-      "Overrides buy time, not absolution — every exception has a sunset and the gate enforces it.",
+      "Claims rest on checkable measurements — and no one can quietly swap in a friendlier ruler.",
   },
   {
-    cp: "CP3",
-    title: "CP3 — The VPN gap is reported",
-    date: "2018-06-04",
+    title: "Change Requests — editing the library properly",
+    date: "This page",
+    nav: "/changes",
     story:
-      "An engineer reports that unmanaged devices can connect to the corporate VPN — finding F-2018-VPN opens on AC-02.",
+      "Every change to the library is a formal request: CREATE a new version, REEVALUATE an existing one, DEPRECATE it. Observe who's allowed to do what — the security lead proposes, but only the independent auditor (Meridian Assurance Group) decides.",
     gate:
-      "The escalation routing skips T. Grant entirely — he owns the affected claims, so the 'independence skip' sends it around him instead of to him.",
+      "Read the decisions on record: SCC-04's CREATE was REJECTED as unmeasurable, SCC-05's DEPRECATE was approved with a future effective date, and SCC-02's REEVALUATE produced v2 — which immediately failed on its own evidence.",
     tries: [
-      {
-        label: "Escalations → find the 'Independence skip' note — that's the routing bypassing Grant",
-        nav: "/escalations",
-      },
-      { label: "Report your own finding on any control and watch its claim re-block", nav: "/findings" },
+      { label: "Read the SCC-04 rejection note — 'NIST CSF adherence' refused because it can't be measured" },
+      { label: "Find CR-SCC-05-DEPRECATE — a retirement scheduled in advance, not a quiet deletion" },
     ],
     takeaway:
-      "The escalation path routes around the person with the most reason to bury the finding.",
+      "Whoever owns the claim can never approve their own edit — independence isn't a policy here, it's the workflow.",
   },
   {
-    cp: "CP4",
-    title: "CP4 — 90 days, still no fix",
-    date: "2018-09-03",
+    title: "Cases — failures become owned work",
+    date: "This page",
+    nav: "/findings",
     story:
-      "The VPN finding has sat unresolved for over 90 days.",
+      "When a check fails, a case opens by itself; when it passes again, the case closes by itself. CASE_2020_007 is OPEN right now — it's the availability failure, and it's exactly why SCC-07 shows DOWN in the Library: the case is the claim's red badge made into work.",
     gate:
-      "Automatic ageing pushes the escalation to L4 — it lands in the Audit Committee chair's inbox (J. Morales).",
+      "Open a case to work it: change its status, add a note, raise its escalation level. Watch what happens when you set one IN_REVIEW — an L1 escalation fires to the control owner automatically.",
     tries: [
-      {
-        label: "Switch role to J. Morales → Escalations → Your Inbox → Ack the L4",
-        nav: "/escalations",
-      },
-      { label: "Try +1 day or Jump on other findings and watch them climb L1→L4" },
+      { label: "Open CASE_2020_007 → 'Pick up' → IN_REVIEW → check Escalations for the L1 that just fired", nav: "/findings/CASE_2020_007" },
+      { label: "Inspect CASE_2019_006 — a CRITICAL case mid-review (a credential found in a public repo)", nav: "/findings/CASE_2019_006" },
     ],
     takeaway:
-      "Oversight arrives on a timer — nobody had to choose to escalate; not fixing things is itself the trigger.",
+      "Cases aren't filed by people arguing something went wrong — the evidence opens them, and closing requires the evidence to pass again.",
   },
   {
-    cp: "CP5",
-    title: "CP5 — Internal review confirms the problem",
-    date: "2019-08-16",
+    title: "Escalations — forcing a decision",
+    date: "This page",
+    nav: "/escalations",
     story:
-      "A quarterly access review concludes: access to critical systems is inappropriate. A new HIGH finding opens on AC-01.",
+      "Work that isn't getting handled climbs: L1 goes to the control owner, L2 to the security lead, L3 to the disclosure committee. Observe the open items on this page — each one is a demand for someone's attention or decision, tied to a live case.",
     gate:
-      "The claim stays blocked — and now there are two independent reasons (the failing test AND the review finding).",
+      "You can acknowledge items routed to your role — and at L3, respond with a formal decision (REMEDIATE, STOP_CITING, REQUEST_REEVALUATION or DISCLOSE) plus a written rationale that goes on the permanent record.",
     tries: [
-      {
-        label: "Close the AC-01 finding as Priya — notice C-01 stays BLOCK: the failing test result still holds",
-        nav: "/findings",
-      },
+      { label: "Switch to Disclosure Committee → respond to the open L3 with a decision + rationale" },
+      { label: "Or back on CASE_2019_006, raise its level to L3 — the old demand moves to Closed and a new one arrives: the closed list records the climb", nav: "/findings/CASE_2019_006" },
     ],
     takeaway:
-      "Closing the paperwork doesn't fix the evidence — findings and test results are independent signals.",
+      "Escalation isn't a notification that gets ignored — at the top level, someone with authority has to write down a decision.",
   },
   {
-    cp: "CP6",
-    title: "CP6 — Password leaked in a public repo",
-    date: "2019-11-19",
+    title: "Audit Trail — nothing is forgotten",
+    date: "This page",
+    nav: "/audit",
     story:
-      "The secrets scanner finds 'ftp_pass = nimbus123' sitting in a public repository — a CRITICAL finding on IA-02.",
+      "Every action in the app is appended to a hash-chained event log: activations, approvals, status changes, committee decisions — including the ones you just made.",
     gate:
-      "C-02's claim about password policy is now contradicted by a critical public exposure.",
+      "Nothing here is editable — that's the point. The one thing you can do is Verify Chain, which re-walks every hash link and would report the first tampered entry.",
     tries: [
-      {
-        label: "Claim Registry → try to Publish C-02 — the gate refuses outright",
-        nav: "/claims",
-      },
-      { label: "Control Tests → see the secrets scan evidence for yourself", nav: "/controls" },
+      { label: "Hit Verify Chain → confirm 'valid'" },
+      { label: "Scroll and find your own actions from this session, sealed in order" },
     ],
     takeaway:
-      "When the evidence got worse, the claims couldn't quietly carry on — the gate kept them honest.",
+      "Governance needs a memory that can't be quietly edited — if anyone rewrites history, the chain breaks.",
   },
   {
-    cp: "CP7",
-    title: "CP7 — Incident 1: a customer notices",
-    date: "2020-06-15",
+    title: "Wrap-up — the loop and the limit",
+    date: "Done",
+    nav: "/about",
     story:
-      "Customer A — a government agency — reports Horizon is contacting unknown external domains.",
+      "You've seen the full loop: evidence → checks → states → cases → escalations → governance. Each persona owns exactly one job in it. The API also exposes citations — tamper-evident statements of a claim's uptime for a period — plus a resolver that checks quoted figures against the record (see /api/docs).",
     gate:
-      "The incident is written to the hash-chained audit log. The claims it should have raised alarms about have been blocked for years.",
+      "One last observation: switch to Public (no role) and watch the sidebar shrink — that's the external stakeholder's view. Everything else is internal governance.",
     tries: [
-      { label: "Dashboard → see where the company stands as incidents begin", nav: "/" },
-      { label: "Audit Trail → find the incident_reported entry in the chain", nav: "/audit" },
+      { label: "Switch to Public → navigate around — notice what an outsider can see vs insiders" },
+      { label: "Read the limitation panel on this page before you demo it", nav: "/about" },
     ],
     takeaway:
-      "By the time customers noticed, the gate had been flagging the contradiction for two and a half years.",
-  },
-  {
-    cp: "CP8",
-    title: "CP8 — Incident 2 confirms the pattern",
-    date: "2020-10-14",
-    story:
-      "Customer B — a security firm — reports Horizon downloading a malicious file. A second incident is logged.",
-    gate:
-      "Same product, same component, logged the same way — the pattern is now on the record.",
-    tries: [
-      {
-        label: "Jump the clock forward and watch unresolved findings keep escalating",
-      },
-      { label: "Escalations → count how many L4 items have accumulated", nav: "/escalations" },
-    ],
-    takeaway:
-      "The evidence trail exists before the breach becomes public — governance makes it usable.",
-  },
-  {
-    cp: "CP9",
-    title: "CP9 — Wrap-up: what the gate bought",
-    date: "2020-12-14",
-    story:
-      "The timeline ends. Time to compare: what happened with the gate vs what happened without it.",
-    gate:
-      "The Dashboard's comparison panel sums it up — every contradiction was flagged, escalated, and logged instead of published.",
-    tries: [
-      { label: "Dashboard → 'Status quo vs With Gate' comparison panel", nav: "/" },
-      {
-        label: "Audit Trail → Tamper Demo: corrupt the log on a copy and watch the chain catch it",
-        nav: "/audit",
-      },
-      {
-        label: "Verify Chain — confirm the real log is still intact",
-      },
-    ],
-    takeaway:
-      "Honest limitation for the demo: this is governance, not malware detection — it wouldn't have caught SUNBURST. It would have caught the false claims.",
+      "This governs claims, not malware — it wouldn't catch a SUNBURST, but it would make false statements visible. SCC-07 is still DOWN as you leave: the record doesn't forget.",
   },
 ];

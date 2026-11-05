@@ -34,7 +34,7 @@ from services import (
 )
 from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
-from seed import seed_db, generate_snapshots, apply_all_checkpoints
+from seed import seed_db, generate_snapshots, apply_all_checkpoints, patch_case_statuses
 
 app = FastAPI(title="SCC Library API", version="1.0.0")
 router = APIRouter()
@@ -804,6 +804,7 @@ def reset_db():
     generate_snapshots()
     seed_db()
     apply_all_checkpoints()
+    patch_case_statuses()
     return {"status": "reset"}
 
 

@@ -22,9 +22,9 @@ export default function DemoCoach({ step, onStep, onFeatureTour }: Props) {
   const s = DEMO_STEPS[step];
   const last = DEMO_STEPS.length - 1;
 
-  // Apply the checkpoint whenever a step with one is entered.
-  // Backward jumps rewind deterministically via the /goto endpoint.
+  // Navigate to the page this step explains; apply its checkpoint if it has one.
   useEffect(() => {
+    if (s?.nav) navigate(s.nav);
     if (!s?.cp) return;
     let cancelled = false;
     setBusy(true);
@@ -109,12 +109,12 @@ export default function DemoCoach({ step, onStep, onFeatureTour }: Props) {
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">What happened</div>
+          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-0.5">What you're looking at</div>
           <p className="text-xs text-slate-700 leading-relaxed">{s.story}</p>
         </div>
 
         <div>
-          <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-0.5">What the gate did</div>
+          <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-0.5">What you can change</div>
           <p className="text-xs text-slate-700 leading-relaxed">{s.gate}</p>
         </div>
 

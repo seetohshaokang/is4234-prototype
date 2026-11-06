@@ -5,6 +5,7 @@ import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
+import { can, useCurrentRole } from "../lib/permissions";
 
 interface EscalationResponse {
   decision: string;
@@ -51,6 +52,7 @@ function LevelBadge({ level }: { level: number }) {
 
 export default function EscalationsPage() {
   const { actorId } = useAppStore();
+  const role = useCurrentRole();
   const qc = useQueryClient();
   const [respondFor, setRespondFor] = useState<number | null>(null);
   const [form, setForm] = useState({ decision: "REMEDIATE", rationale: "", due_on: "" });
@@ -65,7 +67,8 @@ export default function EscalationsPage() {
 
   const ackMut = useMutation({
     mutationFn: (id: number) => api.post(`/escalations/${id}/ack`, null, { params: { actor_id: actorId } }),
-    onSuccess: invalidate,
+    onSuccess: () => { invalidate(); setError(""); },
+    onError: (e: any) => setError(e.response?.data?.detail ?? "Ack failed"),
   });
 
   const respondMut = useMutation({
@@ -82,8 +85,10 @@ export default function EscalationsPage() {
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 
-  const open = escalations.filter(e => e.status === "OPEN");
-  const closed = escalations.filter(e => e.status !== "OPEN");
+  // ACK means "seen", not "handled" — acknowledged escalations stay open.
+  const isLive = (e: Escalation) => e.status === "OPEN" || e.status === "ACK";
+  const open = escalations.filter(isLive);
+  const closed = escalations.filter(e => !isLive(e));
 
   return (
     <div className="space-y-5">
@@ -142,7 +147,12 @@ export default function EscalationsPage() {
                       <td className="px-5 py-2.5 text-xs text-slate-400">{e.created_on}</td>
                       <td className="px-5 py-2.5">
                         <div className="flex gap-2">
-                          {e.status === "OPEN" && (
+                          {e.status === "ACK" && (
+                            <span className="text-xs text-slate-400" title={`Acknowledged ${e.acknowledged_on ?? ""}`}>
+                              Acked
+                            </span>
+                          )}
+                          {e.status === "OPEN" && can.ack(role, e.assigned_to_role) && (
                             <button
                               onClick={() => ackMut.mutate(e.id)}
                               disabled={ackMut.isPending}
@@ -151,7 +161,7 @@ export default function EscalationsPage() {
                               Ack
                             </button>
                           )}
-                          {e.level === 3 && (
+                          {e.level === 3 && can.respond(role) && (
                             <button
                               onClick={() => setRespondFor(respondFor === e.id ? null : e.id)}
                               className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 rounded px-2 py-0.5 transition-colors"

@@ -79,7 +79,7 @@ const steps: DriveStep[] = [
     element: 'a[href="/escalations"]',
     popover: {
       title: "Escalations",
-      description: "Unfixed findings escalate L1→L4 over 30/60/90 days. Your Inbox shows items assigned to your current role — Ack or Resolve them there.",
+      description: "Cases climb L1 (control owner) → L2 (security lead) → L3 (disclosure committee). You can only Ack escalations assigned to your current role; at L3 the committee records a formal decision.",
       side: "right",
     },
   },

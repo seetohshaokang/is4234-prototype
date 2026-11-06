@@ -113,7 +113,7 @@ export const DEMO_STEPS: DemoStep[] = [
     story:
       "When a check fails, a case opens by itself; when it passes again, the case closes by itself. CASE_2020_007 is OPEN right now — it's the availability failure, and it's exactly why SCC-07 shows DOWN in the Library: the case is the claim's red badge made into work.",
     gate:
-      "Open a case to work it: change its status, add a note, raise its escalation level. Watch what happens when you set one IN_REVIEW — an L1 escalation fires to the control owner automatically.",
+      "Open a case to work it: change its status, add a note, raise its escalation level. Watch what happens when you set one IN_REVIEW — an L1 escalation fires to the control owner automatically. Who can do what depends on your persona: the control owner and security lead work cases, only the security lead can push to L3, and closing as a false alarm needs a written reason. The Audit Committee and Meridian only read.",
     tries: [
       { label: "Open CASE_2020_007 → 'Pick up' → IN_REVIEW → check Escalations for the L1 that just fired", nav: "/findings/CASE_2020_007" },
       { label: "Inspect CASE_2019_006 — a CRITICAL case mid-review (a credential found in a public repo)", nav: "/findings/CASE_2019_006" },
@@ -128,10 +128,10 @@ export const DEMO_STEPS: DemoStep[] = [
     story:
       "Work that isn't getting handled climbs: L1 goes to the control owner, L2 to the security lead, L3 to the disclosure committee. Observe the open items on this page — each one is a demand for someone's attention or decision, tied to a live case.",
     gate:
-      "You can acknowledge items routed to your role — and at L3, respond with a formal decision (REMEDIATE, STOP_CITING, REQUEST_REEVALUATION or DISCLOSE) plus a written rationale that goes on the permanent record.",
+      "You can only acknowledge items routed to your role — and at L3, the disclosure committee responds with a formal decision (REMEDIATE, STOP_CITING, REQUEST_REEVALUATION or DISCLOSE) plus a written rationale that goes on the permanent record.",
     tries: [
       { label: "Switch to Disclosure Committee → respond to the open L3 with a decision + rationale" },
-      { label: "Or back on CASE_2019_006, raise its level to L3 — the old demand moves to Closed and a new one arrives: the closed list records the climb", nav: "/findings/CASE_2019_006" },
+      { label: "Or switch to Security Lead and on CASE_2019_006 raise its level to L3 — the old demand moves to Closed and a new one arrives: the closed list records the climb", nav: "/findings/CASE_2019_006" },
     ],
     takeaway:
       "Escalation isn't a notification that gets ignored — at the top level, someone with authority has to write down a decision.",

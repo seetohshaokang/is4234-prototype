@@ -6,6 +6,7 @@ import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
+import { can, useCurrentRole, CLOSE_REASON_MIN } from "../lib/permissions";
 
 interface CaseFinding {
   id: string;
@@ -30,6 +31,7 @@ interface CaseEscalation {
   reason: string;
   created_on: string;
   status: string;
+  responses: unknown[];
 }
 
 interface CaseNote {
@@ -47,7 +49,9 @@ const SEVERITY_COLORS: Record<string, string> = {
   LOW:      "bg-gray-100 text-gray-700 border-gray-200",
 };
 
-const TRANSITIONS: Record<string, { label: string; next: string; style: string }[]> = {
+type Transition = { label: string; next: string; style: string };
+
+const TRANSITIONS: Record<string, Transition[]> = {
   OPEN:      [{ label: "Pick up", next: "IN_REVIEW", style: "bg-blue-600 hover:bg-blue-700 text-white" }],
   IN_REVIEW: [
     { label: "Mark resolved", next: "RESOLVED", style: "bg-green-600 hover:bg-green-700 text-white" },
@@ -67,8 +71,12 @@ export default function CaseDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { actorId } = useAppStore();
+  const role = useCurrentRole();
   const qc = useQueryClient();
   const [noteBody, setNoteBody] = useState("");
+  const [closing, setClosing] = useState(false);
+  const [closeReason, setCloseReason] = useState("");
+  const [error, setError] = useState("");
 
   const { data: finding, isLoading } = useQuery<CaseFinding>({
     queryKey: ["finding", id],
@@ -89,22 +97,31 @@ export default function CaseDetail() {
     enabled: !!id,
   });
 
+  const refreshCase = () => {
+    setError("");
+    qc.invalidateQueries({ queryKey: ["finding", id] });
+    qc.invalidateQueries({ queryKey: ["case-escalations", id] });
+    qc.invalidateQueries({ queryKey: ["case-notes", id] });
+    qc.invalidateQueries({ queryKey: ["escalations"] });
+  };
+  const onFail = (e: any) => setError(e.response?.data?.detail ?? "Action failed");
+
   const statusMut = useMutation({
-    mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }),
+    mutationFn: ({ status, reason }: { status: string; reason?: string }) =>
+      api.patch(`/findings/${id}/status`, { status, reason }, { params: { actor_id: actorId } }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["finding", id] });
-      qc.invalidateQueries({ queryKey: ["case-escalations", id] });
-      qc.invalidateQueries({ queryKey: ["escalations"] });
+      setClosing(false);
+      setCloseReason("");
+      refreshCase();
     },
+    onError: onFail,
   });
 
   const levelMut = useMutation({
-    mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["finding", id] });
-      qc.invalidateQueries({ queryKey: ["case-escalations", id] });
-      qc.invalidateQueries({ queryKey: ["escalations"] });
-    },
+    mutationFn: (level: number) =>
+      api.patch(`/findings/${id}/level`, { level }, { params: { actor_id: actorId } }),
+    onSuccess: refreshCase,
+    onError: onFail,
   });
 
   const noteMut = useMutation({
@@ -114,13 +131,28 @@ export default function CaseDetail() {
       setNoteBody("");
       qc.invalidateQueries({ queryKey: ["case-notes", id] });
     },
+    onError: onFail,
   });
 
   if (isLoading || !finding) return <div className="text-slate-400 text-sm">Loading…</div>;
 
-  const transitions = TRANSITIONS[finding.status] ?? [];
   const isActive = finding.status === "OPEN" || finding.status === "IN_REVIEW";
   const nextLevel = finding.level !== null && finding.level < 3 ? finding.level + 1 : null;
+  const hasCommitteeResponse = caseEscalations.some(e => e.level === 3 && e.responses?.length > 0);
+  const awaitingCommittee = finding.level === 3 && !hasCommitteeResponse;
+
+  const allowed = (t: Transition) =>
+    t.next === "IN_REVIEW" ? can.pickUp(role)
+    : t.next === "RESOLVED" ? can.resolve(role)
+    : can.closeFalse(role);
+  const transitions = (TRANSITIONS[finding.status] ?? []).filter(allowed);
+  const canEscalate = isActive && nextLevel !== null && can.escalateTo(role, nextLevel);
+  const readOnly = !can.pickUp(role) && !can.closeFalse(role) && !can.addNote(role);
+
+  const onTransition = (t: Transition) => {
+    if (t.next === "CLOSED") { setClosing(true); return; }
+    statusMut.mutate({ status: t.next });
+  };
 
   return (
     <div className="space-y-5 max-w-3xl">
@@ -151,17 +183,21 @@ export default function CaseDetail() {
           <h1 className="text-xl font-bold text-slate-900">{finding.title}</h1>
         </div>
         <div className="flex gap-2 flex-shrink-0">
-          {transitions.map(t => (
-            <button
-              key={t.next}
-              onClick={() => statusMut.mutate(t.next)}
-              disabled={statusMut.isPending}
-              className={`text-sm font-medium px-4 py-2 rounded-md transition-colors ${t.style}`}
-            >
-              {t.label}
-            </button>
-          ))}
-          {isActive && nextLevel && (
+          {transitions.map(t => {
+            const blocked = t.next === "RESOLVED" && awaitingCommittee;
+            return (
+              <button
+                key={t.next}
+                onClick={() => onTransition(t)}
+                disabled={statusMut.isPending || blocked}
+                title={blocked ? "L3 cases need a formal committee response before they can be resolved" : undefined}
+                className={`text-sm font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${t.style}`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+          {canEscalate && (
             <button
               onClick={() => levelMut.mutate(nextLevel)}
               disabled={levelMut.isPending}
@@ -172,6 +208,62 @@ export default function CaseDetail() {
           )}
         </div>
       </div>
+
+      {error && (
+        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
+          {error}
+        </div>
+      )}
+
+      {readOnly && (
+        <div className="rounded-md px-4 py-3 text-sm bg-slate-50 text-slate-600 border border-slate-200">
+          Read-only view — your role can see this case but not change it.
+        </div>
+      )}
+
+      {awaitingCommittee && isActive && can.resolve(role) && (
+        <div className="rounded-md px-4 py-3 text-sm bg-purple-50 text-purple-800 border border-purple-200">
+          This case is at L3 — it can be resolved once the disclosure committee records a formal response.
+        </div>
+      )}
+
+      {closing && (
+        <Card>
+          <CardBody className="space-y-3">
+            <div className="text-sm font-semibold text-slate-700">Close as false alarm</div>
+            <p className="text-xs text-slate-500">
+              Explain why this isn't a real problem. The reason is saved as a case note and in the audit trail.
+            </p>
+            <textarea
+              value={closeReason}
+              onChange={e => setCloseReason(e.target.value)}
+              rows={3}
+              placeholder="Why is this a false alarm?"
+              className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 resize-none"
+            />
+            <div className="flex items-center justify-between">
+              <span className={`text-xs ${closeReason.trim().length >= CLOSE_REASON_MIN ? "text-green-600" : "text-slate-400"}`}>
+                {closeReason.trim().length}/{CLOSE_REASON_MIN} characters minimum
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setClosing(false); setCloseReason(""); }}
+                  className="text-sm px-4 py-2 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => statusMut.mutate({ status: "CLOSED", reason: closeReason.trim() })}
+                  disabled={closeReason.trim().length < CLOSE_REASON_MIN || statusMut.isPending}
+                  className="text-sm font-medium px-4 py-2 rounded-md bg-slate-600 hover:bg-slate-700 text-white disabled:opacity-40"
+                >
+                  Confirm close
+                </button>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Metadata */}
       <Card>
@@ -279,6 +371,7 @@ export default function CaseDetail() {
           ))}
 
           {/* Add note form */}
+          {can.addNote(role) && (
           <div className="pt-2 border-t border-slate-100">
             <textarea
               value={noteBody}
@@ -297,6 +390,7 @@ export default function CaseDetail() {
               </button>
             </div>
           </div>
+          )}
         </CardBody>
       </Card>
     </div>

@@ -82,6 +82,7 @@ class RejectBody(BaseModel):
 
 class CaseStatusUpdate(BaseModel):
     status: str
+    reason: Optional[str] = None  # required when closing as false alarm
 
 
 class CaseNoteCreate(BaseModel):
@@ -124,6 +125,40 @@ class ResolveBody(BaseModel):
 
 def _actor(actor_id: str) -> str:
     return actor_id or "P-GRANT"
+
+
+# ── Case & escalation permissions ─────────────────────────────────────────────
+# Audit Committee and the independent auditor are read-only on cases/escalations.
+
+CASE_PICKUP_ROLES   = {Role.CONTROL_OWNER, Role.SECURITY_LEAD}
+CASE_RESOLVE_ROLES  = {Role.CONTROL_OWNER, Role.SECURITY_LEAD}
+CASE_CLOSE_ROLES    = {Role.SECURITY_LEAD, Role.DISCLOSURE_COMMITTEE}
+CASE_NOTE_ROLES     = {Role.CONTROL_OWNER, Role.SECURITY_LEAD, Role.DISCLOSURE_COMMITTEE}
+ESCALATE_ROLES      = {2: {Role.CONTROL_OWNER, Role.SECURITY_LEAD}, 3: {Role.SECURITY_LEAD}}
+RESPOND_ROLES       = {Role.DISCLOSURE_COMMITTEE}
+CLOSE_REASON_MIN    = 20
+
+
+def _require_role(session, actor_id: Optional[str], allowed: set, action: str) -> Person:
+    person = session.get(Person, actor_id) if actor_id else None
+    if not person or person.role not in allowed:
+        who = person.name if person else "This persona"
+        raise HTTPException(403, f"{who} is not allowed to {action}.")
+    return person
+
+
+def _close_case_escalations(session, finding_id: str, as_of: date, actor_id: str) -> None:
+    for esc in session.exec(
+        select(Escalation).where(
+            Escalation.finding_id == finding_id,
+            Escalation.status.in_([EscalationStatus.OPEN, EscalationStatus.ACK]),  # type: ignore[attr-defined]
+        )
+    ).all():
+        esc.status = EscalationStatus.RESOLVED
+        esc.resolved_on = as_of
+        session.add(esc)
+        append_event(session, as_of, actor_id, "escalation_resolved", "escalation",
+                     str(esc.id), {"finding_id": finding_id, "reason": "case_closed"})
 
 
 def _intervals_for(session, sccversion_id: str) -> list[dict]:
@@ -457,8 +492,19 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
     "CLOSED":    [],
 }
 
+def _has_committee_response(session, finding_id: str) -> bool:
+    l3_ids = [e.id for e in session.exec(
+        select(Escalation).where(Escalation.finding_id == finding_id, Escalation.level == 3)
+    ).all()]
+    if not l3_ids:
+        return False
+    return session.exec(
+        select(CommitteeResponse).where(CommitteeResponse.escalation_id.in_(l3_ids))  # type: ignore[attr-defined]
+    ).first() is not None
+
+
 @router.patch("/findings/{finding_id}/status")
-def update_finding_status(finding_id: str, body: CaseStatusUpdate):
+def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: Optional[str] = None):
     with get_session() as session:
         as_of = get_clock(session)
         f = session.get(Finding, finding_id)
@@ -467,28 +513,54 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate):
         allowed = VALID_TRANSITIONS.get(str(f.status), [])
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
+
+        reason = (body.reason or "").strip()
+        if body.status == "IN_REVIEW":
+            actor = _require_role(session, actor_id, CASE_PICKUP_ROLES, "pick up cases")
+        elif body.status == "RESOLVED":
+            actor = _require_role(session, actor_id, CASE_RESOLVE_ROLES, "resolve cases")
+            if f.level == 3 and not _has_committee_response(session, finding_id):
+                raise HTTPException(400, "An L3 case can only be resolved after the disclosure "
+                                         "committee has recorded a formal response.")
+        else:  # CLOSED
+            actor = _require_role(session, actor_id, CASE_CLOSE_ROLES, "close cases as a false alarm")
+            if len(reason) < CLOSE_REASON_MIN:
+                raise HTTPException(400, f"Closing as a false alarm needs a reason of at least "
+                                         f"{CLOSE_REASON_MIN} characters.")
+
+        old_status = str(f.status)
         f.status = FindingStatus(body.status)
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
+            _close_case_escalations(session, finding_id, as_of, actor.id)
+        if body.status == "CLOSED":
+            session.add(CaseNote(finding_id=finding_id, author_id=actor.id, created_on=as_of,
+                                 body=f"Closed as false alarm: {reason}"))
         session.add(f)
+        append_event(session, as_of, actor.id, "case_status_changed", "finding", finding_id,
+                     {"from": old_status, "to": body.status, **({"reason": reason} if reason else {})})
         session.commit()
         if body.status == "IN_REVIEW" and f.level is None:
-            escalate_case(session, finding_id, 1, "SYSTEM")
+            escalate_case(session, finding_id, 1, actor.id)
         return {"ok": True, "status": body.status}
 
 
 @router.patch("/findings/{finding_id}/level")
-def update_finding_level(finding_id: str, body: CaseLevelUpdate):
+def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: Optional[str] = None):
     with get_session() as session:
         f = session.get(Finding, finding_id)
         if not f:
             raise HTTPException(status_code=404, detail="Case not found")
-        if body.level not in (1, 2, 3):
-            raise HTTPException(status_code=400, detail="Level must be 1, 2, or 3")
-        if f.level is not None and body.level <= f.level:
-            raise HTTPException(status_code=400, detail="Can only escalate to a higher level")
+        if f.status not in (FindingStatus.OPEN, FindingStatus.IN_REVIEW):
+            raise HTTPException(400, "Only active cases can be escalated")
+        if f.level is None:
+            raise HTTPException(400, "Pick up the case first — it starts at L1")
+        if body.level != f.level + 1 or body.level not in ESCALATE_ROLES:
+            raise HTTPException(400, f"Can only escalate one level at a time (L{f.level} → L{f.level + 1})")
+        actor = _require_role(session, actor_id, ESCALATE_ROLES[body.level],
+                              f"escalate cases to L{body.level}")
         try:
-            esc = escalate_case(session, finding_id, body.level, "SYSTEM")
+            esc = escalate_case(session, finding_id, body.level, actor.id)
             return {"ok": True, "level": body.level, "escalation_id": esc.id}
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
@@ -519,9 +591,15 @@ def add_case_note(finding_id: str, body: CaseNoteCreate):
         f = session.get(Finding, finding_id)
         if not f:
             raise HTTPException(status_code=404, detail="Case not found")
+        if not body.body.strip():
+            raise HTTPException(400, "Note cannot be empty")
+        actor = _require_role(session, body.author_id, CASE_NOTE_ROLES, "add case notes")
         as_of = get_clock(session)
-        note = CaseNote(finding_id=finding_id, author_id=body.author_id, created_on=as_of, body=body.body)
+        note = CaseNote(finding_id=finding_id, author_id=actor.id, created_on=as_of, body=body.body)
         session.add(note)
+        session.flush()
+        append_event(session, as_of, actor.id, "case_note_added", "finding", finding_id,
+                     {"note_id": note.id})
         session.commit()
         session.refresh(note)
         return {"id": note.id, "author_id": note.author_id, "created_on": str(note.created_on), "body": note.body}
@@ -564,30 +642,46 @@ def list_escalations():
         return result
 
 
+def _get_escalation(session, esc_id: int) -> Escalation:
+    esc = session.get(Escalation, esc_id)
+    if not esc:
+        raise HTTPException(404, f"Escalation {esc_id} not found")
+    return esc
+
+
 @router.post("/escalations/{esc_id}/ack")
-def ack_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
+def ack_escalation_route(esc_id: int, actor_id: Optional[str] = None):
     with get_session() as session:
-        try:
-            esc = ack_escalation(session, esc_id, _actor(actor_id))
-            return {"id": esc.id, "status": str(esc.status)}
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+        esc = _get_escalation(session, esc_id)
+        role = str(esc.assigned_to_role).replace("_", " ")
+        actor = _require_role(session, actor_id, {esc.assigned_to_role},
+                              f"acknowledge this escalation (assigned to {role})")
+        if esc.status != EscalationStatus.OPEN:
+            raise HTTPException(400, f"Escalation is already {esc.status}")
+        esc = ack_escalation(session, esc_id, actor.id)
+        return {"id": esc.id, "status": str(esc.status)}
 
 
 @router.post("/escalations/{esc_id}/resolve")
-def resolve_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
+def resolve_escalation_route(esc_id: int, actor_id: Optional[str] = None):
     with get_session() as session:
-        try:
-            esc = resolve_escalation(session, esc_id, _actor(actor_id))
-            return {"id": esc.id, "status": str(esc.status)}
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+        esc = _get_escalation(session, esc_id)
+        actor = _require_role(session, actor_id, {esc.assigned_to_role}, "resolve this escalation")
+        esc = resolve_escalation(session, esc_id, actor.id)
+        return {"id": esc.id, "status": str(esc.status)}
 
 
 @router.post("/escalations/{esc_id}/respond")
 def respond_escalation_route(esc_id: int, body: EscalationRespondBody,
-                              actor_id: str = "P-OKAFOR"):
+                              actor_id: Optional[str] = None):
     with get_session() as session:
+        esc = _get_escalation(session, esc_id)
+        actor = _require_role(session, actor_id, RESPOND_ROLES, "record a formal committee response")
+        if esc.level != 3:
+            raise HTTPException(400, "Formal responses are only for L3 escalations")
+        if esc.status not in (EscalationStatus.OPEN, EscalationStatus.ACK):
+            raise HTTPException(400, f"Escalation is already {esc.status}")
+        actor_id = actor.id
         try:
             due = date.fromisoformat(body.due_on) if body.due_on else None
             resp = respond_escalation(session, esc_id, _actor(actor_id),

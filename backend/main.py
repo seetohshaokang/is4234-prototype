@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from db import (
     get_session, create_tables,
-    Control, Finding, FindingStatus, CaseNote,
+    Control, Finding, FindingStatus, CaseNote, ChangeRequestNote,
     CheckDefinition, Collector, CollectorStatus,
     SCC, SCCVersion, SCCVersionStatus, SCCVersionControl,
     StateInterval, SCCState,
@@ -31,6 +31,7 @@ from services import (
     escalate_case, ack_escalation, resolve_escalation, respond_escalation,
     create_change_request, approve_change_request, reject_change_request,
     approve_collector, submit_collector, apply_checkpoint, CHECKPOINTS,
+    auditor_create_scc, auditor_revise_scc, auditor_deprecate_scc,
 )
 from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
@@ -92,6 +93,39 @@ class CaseNoteCreate(BaseModel):
 
 class CaseLevelUpdate(BaseModel):
     level: int
+
+
+class CaseAssign(BaseModel):
+    person_id: str
+
+
+class CRNoteCreate(BaseModel):
+    body: str
+    author_id: str
+
+
+class SCCCreateBody(BaseModel):
+    scc_id: str
+    title: str
+    owner_id: str
+    assertion_text: str
+    target_uptime_pct: float = 99.0
+    rolling_window_days: int = 365
+    max_single_downtime_days: int = 7
+    evidence_type: str = "TESTED"
+
+
+class SCCReviseBody(BaseModel):
+    assertion_text: str
+    reason: str
+    target_uptime_pct: float = 99.0
+    rolling_window_days: int = 365
+    max_single_downtime_days: int = 7
+    evidence_type: str = "TESTED"
+
+
+class SCCDeprecateBody(BaseModel):
+    reason: str
 
 
 class CollectorSubmitBody(BaseModel):
@@ -311,6 +345,46 @@ def get_scc(scc_id: str):
                 "versions": versions_with_intervals}
 
 
+@app.post("/sccs")
+def create_scc_route(body: SCCCreateBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            scc = auditor_create_scc(
+                session, _actor(actor_id), body.scc_id, body.title,
+                body.owner_id, body.assertion_text,
+                body.target_uptime_pct, body.rolling_window_days,
+                body.max_single_downtime_days, body.evidence_type,
+            )
+            return {"id": scc.id, "title": scc.title}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/sccs/{scc_id}/revise")
+def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            sv = auditor_revise_scc(
+                session, _actor(actor_id), scc_id,
+                body.assertion_text, body.reason,
+                body.target_uptime_pct, body.rolling_window_days,
+                body.max_single_downtime_days, body.evidence_type,
+            )
+            return {"id": sv.id, "version": sv.version, "status": str(sv.status)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
+@app.post("/sccs/{scc_id}/deprecate")
+def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-REYES"):
+    with get_session() as session:
+        try:
+            sv = auditor_deprecate_scc(session, _actor(actor_id), scc_id, body.reason)
+            return {"id": sv.id, "status": str(sv.status)}
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+
+
 # ── Controls & check runs ─────────────────────────────────────────────────────
 
 @router.get("/controls")
@@ -443,6 +517,45 @@ def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P
             raise HTTPException(403, str(e))
 
 
+@app.get("/change-requests/{cr_id}/notes")
+def list_cr_notes(cr_id: str):
+    with get_session() as session:
+        notes = list(session.exec(
+            select(ChangeRequestNote)
+            .where(ChangeRequestNote.cr_id == cr_id)
+            .order_by(ChangeRequestNote.created_on.asc())  # type: ignore[attr-defined]
+        ).all())
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
+        return [
+            {
+                "id": n.id, "author_id": n.author_id,
+                "author_name": person_map[n.author_id].name if n.author_id in person_map else n.author_id,
+                "created_on": str(n.created_on), "body": n.body,
+            }
+            for n in notes
+        ]
+
+
+@app.post("/change-requests/{cr_id}/notes")
+def add_cr_note(cr_id: str, body: CRNoteCreate):
+    with get_session() as session:
+        cr = session.get(ChangeRequest, cr_id)
+        if not cr:
+            raise HTTPException(status_code=404, detail="Change request not found")
+        as_of = get_clock(session)
+        note = ChangeRequestNote(cr_id=cr_id, author_id=body.author_id, created_on=as_of, body=body.body)
+        session.add(note)
+        session.flush()
+        append_event(session, as_of, body.author_id, "cr_note_added",
+                     "changerequest", cr_id, {"preview": body.body[:80]})
+        session.commit()
+        session.refresh(note)
+        person = session.get(Person, body.author_id)
+        return {"id": note.id, "author_id": note.author_id,
+                "author_name": person.name if person else note.author_id,
+                "created_on": str(note.created_on), "body": note.body}
+
+
 # ── Findings ──────────────────────────────────────────────────────────────────
 
 @router.get("/findings")
@@ -454,6 +567,7 @@ def list_findings(status: Optional[str] = None):
             q = q.where(Finding.status == status)
         findings = list(session.exec(q.order_by(Finding.opened_on.desc(), Finding.id.asc())).all())  # type: ignore[attr-defined]
         control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
         return [{"id": f.id, "control_id": f.control_id,
                  "check_id": control_map[f.control_id].check_id if f.control_id in control_map else None,
                  "severity": str(f.severity),
@@ -461,7 +575,9 @@ def list_findings(status: Optional[str] = None):
                  "closed_on": str(f.closed_on) if f.closed_on else None,
                  "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
                  "source": f.source, "title": f.title, "description": f.description,
-                 "root_cause_note": f.root_cause_note, "level": f.level}
+                 "root_cause_note": f.root_cause_note, "level": f.level,
+                 "assigned_to_id": f.assigned_to_id,
+                 "assigned_to_name": person_map[f.assigned_to_id].name if f.assigned_to_id and f.assigned_to_id in person_map else None}
                 for f in findings]
 
 
@@ -482,6 +598,8 @@ def get_finding(finding_id: str):
             "days_open": (as_of - f.opened_on).days if f.status == FindingStatus.OPEN else None,
             "source": f.source, "title": f.title, "description": f.description,
             "root_cause_note": f.root_cause_note, "level": f.level,
+            "assigned_to_id": f.assigned_to_id,
+            "assigned_to_name": session.get(Person, f.assigned_to_id).name if f.assigned_to_id else None,
         }
 
 
@@ -530,6 +648,8 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: Opt
 
         old_status = str(f.status)
         f.status = FindingStatus(body.status)
+        if body.status == "IN_REVIEW" and f.assigned_to_id is None:
+            f.assigned_to_id = _actor(actor_id)
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
             _close_case_escalations(session, finding_id, as_of, actor.id)
@@ -563,7 +683,27 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: Optio
             esc = escalate_case(session, finding_id, body.level, actor.id)
             return {"ok": True, "level": body.level, "escalation_id": esc.id}
         except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(status_code=403, detail=str(e))
+
+
+@app.patch("/findings/{finding_id}/assign")
+def assign_finding(finding_id: str, body: CaseAssign, actor_id: str = "SYSTEM"):
+    with get_session() as session:
+        f = session.get(Finding, finding_id)
+        if not f:
+            raise HTTPException(status_code=404, detail="Case not found")
+        person = session.get(Person, body.person_id)
+        if not person:
+            raise HTTPException(status_code=404, detail="Person not found")
+        f.assigned_to_id = body.person_id
+        session.add(f)
+        session.flush()
+        as_of = get_clock(session)
+        append_event(session, as_of, _actor(actor_id), "case_assigned",
+                     "finding", finding_id,
+                     {"assigned_to": body.person_id, "name": person.name})
+        session.commit()
+        return {"ok": True, "assigned_to_id": body.person_id, "assigned_to_name": person.name}
 
 
 @router.get("/findings/{finding_id}/notes")
@@ -615,6 +755,7 @@ def list_escalations():
         ).all())
         finding_map = {f.id: f for f in session.exec(select(Finding)).all()}
         control_map = {c.id: c for c in session.exec(select(Control)).all()}
+        person_map = {p.id: p for p in session.exec(select(Person)).all()}
         result = []
         for e in escs:
             responses = list(session.exec(
@@ -622,14 +763,19 @@ def list_escalations():
             ).all())
             f = finding_map.get(e.finding_id)
             check_id = control_map[f.control_id].check_id if f and f.control_id in control_map else None
+            assigned_name = person_map[f.assigned_to_id].name if f and f.assigned_to_id and f.assigned_to_id in person_map else None
+            days_open = (as_of - f.opened_on).days if f and f.status == FindingStatus.OPEN else None
             result.append({
                 "id": e.id,
                 "finding_id": e.finding_id,
                 "finding_title": f.title if f else None,
+                "finding_status": str(f.status) if f else None,
                 "check_id": check_id,
                 "level": e.level,
                 "assigned_to_role": str(e.assigned_to_role),
+                "assigned_to_name": assigned_name,
                 "reason": e.reason,
+                "days_open": days_open,
                 "created_on": str(e.created_on),
                 "acknowledged_on": str(e.acknowledged_on) if e.acknowledged_on else None,
                 "resolved_on": str(e.resolved_on) if e.resolved_on else None,
@@ -848,13 +994,18 @@ def _parse_citation_string(s: str):
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
 @router.get("/audit")
-def list_audit(limit: int = 100):
+def list_audit(limit: int = 500, action: Optional[str] = None, actor_id: Optional[str] = None):
     with get_session() as session:
-        events = list(session.exec(
-            select(AuditEvent).order_by(AuditEvent.seq.desc())  # type: ignore[attr-defined]
-            .limit(limit)
-        ).all())
-        return [{"seq": e.seq, "ts_sim": str(e.ts_sim), "actor_id": e.actor_id,
+        q = select(AuditEvent).order_by(AuditEvent.seq.desc())  # type: ignore[attr-defined]
+        if action:
+            q = q.where(AuditEvent.action == action)
+        if actor_id:
+            q = q.where(AuditEvent.actor_id == actor_id)
+        events = list(session.exec(q.limit(limit)).all())
+        person_map = {p.id: p.name for p in session.exec(select(Person)).all()}
+        return [{"seq": e.seq, "ts_sim": str(e.ts_sim),
+                 "actor_id": e.actor_id,
+                 "actor_name": person_map.get(e.actor_id, e.actor_id),
                  "action": e.action, "subject_type": e.subject_type,
                  "subject_id": e.subject_id,
                  "payload": json.loads(e.payload) if e.payload else None,

@@ -16,19 +16,18 @@
 
 export interface DemoTry {
   label: string;
-  nav?: string; // optional page to jump to for this action
-  hint?: string;
+  nav?: string;
 }
 
 export interface DemoStep {
-  cp?: string;      // checkpoint applied when this step is entered (unused)
-  nav?: string;     // route to open when this step is entered
+  cp?: string;
+  nav?: string;
   title: string;
-  date: string;     // short tag shown top-right of the step
-  story: string;    // what you're looking at
-  gate: string;     // what you can change on this screen
-  tries: DemoTry[]; // suggested exercises
-  takeaway: string; // the "so what"
+  date: string;
+  story: string;
+  gate: string;
+  tries: DemoTry[];
+  takeaway: string;
 }
 
 export const DEMO_STEPS: DemoStep[] = [
@@ -37,133 +36,169 @@ export const DEMO_STEPS: DemoStep[] = [
     date: "Intro",
     nav: "/sccs",
     story:
-      "The SCC Library tracks security assertions the way SLAs track uptime: each Security Citation Code is a measurable claim ('admin accounts are under 10%', 'every completed month ≥ 99.9% availability') with its state computed from evidence — not declared by anyone. The data is inspired by the SolarWinds case and 100% synthetic.",
+      "This guided demo walks the SolarWinds case study checkpoint by checkpoint — from December 2017 (the first security claims are drafted) to December 2020 (the breach becomes public). At each stop you'll see what happened, what the SCC Library recorded, and things to explore.",
     gate:
-      "Each step jumps you to the page it explains — you're on the Library now. The persona switcher at the bottom of the sidebar decides your role; buttons and permissions follow it.",
+      "Nothing is locked — the app stays fully interactive at every step. Explore each page, then press Next when ready.",
     tries: [
-      { label: "Watch the persona switcher as you go — it changes what you're allowed to touch" },
+      { label: "Open the SCC Library for the current overview", nav: "/sccs" },
+      { label: "Or just press Next to start the story at CP1" },
     ],
     takeaway:
-      "A claim isn't believed or disbelieved here — it's measured, and the measurement is always on display.",
+      "Checkpoints move the story forward; everything else is you acting as one of the personas — the system reacts the same either way.",
   },
   {
-    title: "The Library — the claims themselves",
-    date: "This page",
-    nav: "/sccs",
+    cp: "CP1",
+    title: "CP1 — SCCs drafted, checks run, first failures",
+    date: "2017-12-01",
     story:
-      "One row per assertion. Read Current State against Rolling Uptime %: state is what the claim is right now, while the percentage is the share of its whole tracked life spent UPHELD — that's why they can disagree. SCC-07 is DOWN today yet its 94.6% is still the library's best: it spent almost three years fully green before September 2020's 99.71% broke the every-month rule — and a failed month never leaves the record, so every check since has failed too. Meanwhile SCC-01/02/03 read UPHELD on ~3% — passing right now, after spending almost their entire record failing.",
+      "Marcus Tan (Security Lead) submits CREATE change requests for SCC-01 through SCC-07. David Ng (External Auditor) approves six of them — and rejects SCC-04 as 'not measurable'. The first automated checks run immediately.",
     gate:
-      "This page is read-only — deliberately. Nobody edits a claim's state directly; states are computed from evidence. What you can change is which row you open to inspect.",
+      "Three checks fail straight away: T-LEASTPRIV (access control), T-PWDPOLICY (password policy), and T-SDLSCAN (secure SDLC). The affected SCCs go DOWN and findings open automatically.",
     tries: [
-      { label: "Open SCC-07 — the only claim failing right now", nav: "/sccs/SCC-07" },
-      { label: "Notice SCC-04 is missing entirely — the auditor rejected it as unmeasurable at creation" },
+      { label: "SCC Library → see which SCCs are UPHELD vs DOWN", nav: "/sccs" },
+      { label: "Change Requests → see the approved and rejected CRs from CP1", nav: "/changes" },
+      { label: "Cases → three findings already open from the failed checks", nav: "/findings" },
+      { label: "Security Checks → see the evidence behind each check result", nav: "/checks" },
     ],
     takeaway:
-      "State is a snapshot; uptime is the résumé. You can fail today with a clean history — or pass today after years of lying.",
+      "The moment checks are wired to SCC versions, false 'all-green' claims become impossible — the library reflects what the evidence actually says.",
   },
   {
-    title: "SCC detail — a claim you can watch failing",
-    date: "This page",
-    nav: "/sccs/SCC-07",
+    cp: "CP1b",
+    title: "CP1b — Findings are live objects, escalations fire",
+    date: "2017-12-01",
     story:
-      "Everything about one assertion: the exact wording, the version chain, a day-by-day uptime heatmap, and state intervals with cause notes. SCC-07's rule is ≥99.9% in each completed month — September 2020 came in at 99.71%, so the claim went DOWN on Oct-16 and can't recover — the check re-reads every completed month, and the bad one is permanent. That's why 2020 turns red mid-October and every year after is a solid red wall.",
+      "The failed checks didn't just produce a report — three HIGH findings are now open and escalations have already fired to the control owner (L1) and security lead (L2).",
     gate:
-      "Also read-only — it's the record. But watch what it records: when a claim is reworded, a new version starts and the old one keeps its history — including whether it was failing when it was replaced.",
+      "Open findings keep their mapped SCCs DOWN. Escalations route around conflicts of interest — the person who filed the finding, or who owns the affected SCC, is bypassed.",
     tries: [
-      { label: "Open SCC-02 — v1 is SUPERSEDED and carries the permanent red 'superseded while DOWN' flag", nav: "/sccs/SCC-02" },
-      { label: "Open SCC-05 — DEPRECATED: a wall of grey, UNKNOWN its whole life — an attestation that was never measurable", nav: "/sccs/SCC-05" },
+      { label: "Escalations → see the open L2 escalations", nav: "/escalations" },
+      { label: "Click 'View case →' on an escalation to open the case panel", nav: "/escalations" },
+      { label: "Cases → pick up a case, add a note as Priya Nair (DevSecOps)", nav: "/findings" },
     ],
     takeaway:
-      "Versioning lets claims evolve honestly — you can change the wording, never the track record.",
+      "Escalations arrive automatically — nobody chose to flag the problem. The routing also enforces independence: the owner of a failing SCC can't quietly handle its own alarm.",
   },
   {
-    title: "Security Checks — where evidence comes from",
-    date: "This page",
-    nav: "/checks",
+    cp: "CP2",
+    title: "CP2 — 90 days open, escalation reaches committee level",
+    date: "2018-03-02",
     story:
-      "Checks are the automated tests behind each control: a threshold, a cadence, a data source. Open T-UPTIME — its latest result is the FAIL that keeps SCC-07 DOWN: the availability rule requires every completed month at 99.9%, September's 99.71% never leaves the record, so every run since has failed.",
+      "SCC-01 has been DOWN for over 90 days with no resolution. Time-based escalation rules push the case to L3 — it now requires the Disclosure Committee's attention.",
     gate:
-      "Nothing here is editable — checks and collectors are the measurement machinery, fixed by the auditor's approval, not by the team being measured.",
+      "The escalation landed in Rachel Lim's (CFO / Disclosure Committee) inbox. Nobody had to decide to escalate — not resolving the finding is itself the trigger.",
     tries: [
-      { label: "Open T-UPTIME → read the pass rule and the failing September value" },
-      { label: "Compare T-VPNDEVICE and T-LEASTPRIV — the checks that kept SCC-01 down for years before passing in November" },
+      { label: "Escalations → see the L3 escalation that accumulated", nav: "/escalations" },
+      { label: "Switch persona to Rachel Lim → open the case panel → Acknowledge", nav: "/escalations" },
     ],
     takeaway:
-      "Claims rest on checkable measurements — and no one can quietly swap in a friendlier ruler.",
+      "Oversight arrives on a timer. The longer a problem sits unresolved, the higher up it climbs — automatically.",
   },
   {
-    title: "Change Requests — editing the library properly",
-    date: "This page",
-    nav: "/changes",
+    cp: "CP3",
+    title: "CP3 — VPN gap detected",
+    date: "2018-06-04",
     story:
-      "Every change to the library is a formal request: CREATE a new version, REEVALUATE an existing one, DEPRECATE it. Observe who's allowed to do what — the security lead proposes, but only the independent auditor (Meridian Assurance Group) decides.",
+      "A new network snapshot shows six unmanaged devices connecting to the corporate VPN. T-VPNDEVICE fails. A new finding opens on AC-02, pulling SCC-01 further DOWN.",
     gate:
-      "Read the decisions on record: SCC-04's CREATE was REJECTED as unmeasurable, SCC-05's DEPRECATE was approved with a future effective date, and SCC-02's REEVALUATE produced v2 — which immediately failed on its own evidence.",
+      "SCC-01 now has two independent reasons to be DOWN: the original access control failure and the new VPN gap. Each is tracked separately.",
     tries: [
-      { label: "Read the SCC-04 rejection note — 'NIST CSF adherence' refused because it can't be measured" },
-      { label: "Find CR-SCC-05-DEPRECATE — a retirement scheduled in advance, not a quiet deletion" },
+      { label: "SCC Library → click SCC-01 to see its state timeline", nav: "/sccs" },
+      { label: "Cases → see the new VPN finding alongside the existing ones", nav: "/findings" },
     ],
     takeaway:
-      "Whoever owns the claim can never approve their own edit — independence isn't a policy here, it's the workflow.",
+      "Multiple independent failures stack — closing one finding doesn't flip the SCC back to UPHELD if another is still open.",
   },
   {
-    title: "Cases — failures become owned work",
-    date: "This page",
-    nav: "/findings",
+    cp: "CP4",
+    title: "CP4 — SCC-02 revised: SSO transition",
+    date: "2018-09-03",
     story:
-      "When a check fails, a case opens by itself; when it passes again, the case closes by itself. CASE_2020_007 is OPEN right now — it's the availability failure, and it's exactly why SCC-07 shows DOWN in the Library: the case is the claim's red badge made into work.",
+      "Most systems have moved to SSO. Marcus Tan submits a REVISION change request for SCC-02 — the password policy standard should now only apply to non-SSO systems. David Ng approves it.",
     gate:
-      "Open a case to work it: change its status, add a note, raise its escalation level. Watch what happens when you set one IN_REVIEW — an L1 escalation fires to the control owner automatically. Who can do what depends on your persona: the control owner and security lead work cases, only the security lead can push to L3, and closing as a false alarm needs a written reason. The Audit Committee and Meridian only read.",
+      "SCC-02 v1 is superseded and a new v2 goes ACTIVE. The revision is on the record: who proposed it, who approved it, and why.",
     tries: [
-      { label: "Open CASE_2020_007 → 'Pick up' → IN_REVIEW → check Escalations for the L1 that just fired", nav: "/findings/CASE_2020_007" },
-      { label: "Inspect CASE_2019_006 — a CRITICAL case mid-review (a credential found in a public repo)", nav: "/findings/CASE_2019_006" },
+      { label: "Change Requests → find the REVISION CR for SCC-02", nav: "/changes" },
+      { label: "SCC Library → click SCC-02 → see v1 (SUPERSEDED) and v2 (ACTIVE)", nav: "/sccs" },
     ],
     takeaway:
-      "Cases aren't filed by people arguing something went wrong — the evidence opens them, and closing requires the evidence to pass again.",
+      "Versioning means the old assertion stays on the record. Auditors can always see what was claimed, when it changed, and who approved it.",
   },
   {
-    title: "Escalations — forcing a decision",
-    date: "This page",
-    nav: "/escalations",
+    cp: "CP5",
+    title: "CP5 — New uptime collector under review",
+    date: "2019-08-16",
     story:
-      "Work that isn't getting handled climbs: L1 goes to the control owner, L2 to the security lead, L3 to the disclosure committee. Observe the open items on this page — each one is a demand for someone's attention or decision, tied to a live case.",
+      "Priya Nair submits a new OP-01 collector script (v2) after a vendor switch. While it awaits David Ng's approval, SCC-07 flips to UNKNOWN — it cannot be UPHELD without an approved measurement tool.",
     gate:
-      "You can only acknowledge items routed to your role — and at L3, the disclosure committee responds with a formal decision (REMEDIATE, STOP_CITING, REQUEST_REEVALUATION or DISCLOSE) plus a written rationale that goes on the permanent record.",
+      "UNKNOWN is distinct from DOWN: the SCC isn't failing, but it can't be verified. David Ng reviews and approves the collector on 2019-09-05, restoring SCC-07 to UPHELD.",
     tries: [
-      { label: "Switch to Disclosure Committee → respond to the open L3 with a decision + rationale" },
-      { label: "Or switch to Security Lead and on CASE_2019_006 raise its level to L3 — the old demand moves to Closed and a new one arrives: the closed list records the climb", nav: "/findings/CASE_2019_006" },
+      { label: "Security Checks → find T-UPTIME and its collector status", nav: "/checks" },
+      { label: "SCC Library → see SCC-07 in UNKNOWN state", nav: "/sccs" },
     ],
     takeaway:
-      "Escalation isn't a notification that gets ignored — at the top level, someone with authority has to write down a decision.",
+      "The measurement tool itself is under governance. An unapproved collector means no valid evidence — and no UPHELD claim.",
   },
   {
-    title: "Audit Trail — nothing is forgotten",
-    date: "This page",
-    nav: "/audit",
+    cp: "CP6",
+    title: "CP6 — Password found in public repo",
+    date: "2019-11-19",
     story:
-      "Every action in the app is appended to a hash-chained event log: activations, approvals, status changes, committee decisions — including the ones you just made.",
+      "The secrets scanner finds 'ftp_pass = nimbus123' committed to a public repository. T-SECRETS fires a CRITICAL finding. SCC-02 v2 goes DOWN — the revised password standard is now contradicted by a critical exposure.",
     gate:
-      "Nothing here is editable — that's the point. The one thing you can do is Verify Chain, which re-walks every hash link and would report the first tampered entry.",
+      "A CRITICAL finding opens immediately. Even though SCC-02 was recently revised to be more precise, the new evidence directly contradicts it.",
     tries: [
-      { label: "Hit Verify Chain → confirm 'valid'" },
-      { label: "Scroll and find your own actions from this session, sealed in order" },
+      { label: "Cases → find the CRITICAL secrets finding", nav: "/findings" },
+      { label: "SCC Library → see SCC-02 v2 flip from UPHELD to DOWN", nav: "/sccs" },
+      { label: "Audit Trail → find the check_run entry for T-SECRETS", nav: "/audit" },
     ],
     takeaway:
-      "Governance needs a memory that can't be quietly edited — if anyone rewrites history, the chain breaks.",
+      "Revising the standard doesn't help if the evidence contradicts even the tighter version. The library tracks both.",
   },
   {
-    title: "Wrap-up — the loop and the limit",
-    date: "Done",
-    nav: "/about",
+    cp: "CP7",
+    title: "CP7 — SCC-05 deprecated",
+    date: "2020-06-15",
     story:
-      "You've seen the full loop: evidence → checks → states → cases → escalations → governance. Each persona owns exactly one job in it. The API also exposes citations — tamper-evident statements of a claim's uptime for a period — plus a resolver that checks quoted figures against the record (see /api/docs).",
+      "Marcus Tan requests to deprecate SCC-05 (configuration management attestation). The company is no longer maintaining it as a formal SCC. David Ng approves, effective 2020-06-30.",
     gate:
-      "One last observation: switch to Public (no role) and watch the sidebar shrink — that's the external stakeholder's view. Everything else is internal governance.",
+      "SCC-05 goes NOT_ACTIVE from the effective date. It remains on the record as DEPRECATED — citable for periods ending on or before 2020-06-30, but no longer an active claim.",
     tries: [
-      { label: "Switch to Public → navigate around — notice what an outsider can see vs insiders" },
-      { label: "Read the limitation panel on this page before you demo it", nav: "/about" },
+      { label: "Change Requests → find the DEPRECATE CR for SCC-05", nav: "/changes" },
+      { label: "SCC Library → see SCC-05 listed as NOT_ACTIVE", nav: "/sccs" },
     ],
     takeaway:
-      "This governs claims, not malware — it wouldn't catch a SUNBURST, but it would make false statements visible. SCC-07 is still DOWN as you leave: the record doesn't forget.",
+      "Deprecation is an auditable act — the why, who, and when are recorded. The historical record is preserved even after the SCC is retired.",
+  },
+  {
+    cp: "CP8",
+    title: "CP8 — Availability drops below target",
+    date: "2020-10-14",
+    story:
+      "September 2020 availability is measured below the rolling target. SCC-07 flips DOWN for the September window. The case study is approaching its end.",
+    gate:
+      "The uptime interval is recorded with the precise measurement. SCC states are computed from evidence — not from someone's judgement.",
+    tries: [
+      { label: "SCC Library → click SCC-07 → inspect the state timeline chart", nav: "/sccs" },
+      { label: "Cases → see any findings that opened from the availability breach", nav: "/findings" },
+    ],
+    takeaway:
+      "When the numbers move, the state follows automatically. No one had to decide SCC-07 was failing — the evidence decided.",
+  },
+  {
+    cp: "CP9",
+    title: "CP9 — Wrap-up: what the library recorded",
+    date: "2020-12-14",
+    story:
+      "The SolarWinds breach became public in December 2020. Looking back: from the moment the first checks ran in December 2017, the library had a continuous, tamper-evident record of which SCCs were UPHELD, which were DOWN, and why.",
+    gate:
+      "Every state change, finding, escalation, change request, and approval is in the audit trail — hash-chained so no entry can be silently altered.",
+    tries: [
+      { label: "Audit Trail → scroll through the full timeline of events", nav: "/audit" },
+      { label: "SCC Library → compare which SCCs ended UPHELD vs DOWN by December 2020", nav: "/sccs" },
+      { label: "Switch to David Ng (External Auditor) → try creating or revising an SCC", nav: "/sccs" },
+    ],
+    takeaway:
+      "The library doesn't prevent breaches — it makes it impossible to claim 'we didn't know'. Every contradiction between claims and evidence was recorded as it happened.",
   },
 ];

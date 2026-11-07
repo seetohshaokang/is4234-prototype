@@ -23,7 +23,7 @@ const NAV_INTERNAL = [
   { to: "/about",       icon: Info,            label: "About",            roles: null },
   { to: "/sccs",        icon: Library,         label: "SCC Library",      roles: null },
   { to: "/checks",      icon: FlaskConical,    label: "Security Checks",  roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
-  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee"] },
+  { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"] },
   { to: "/findings",    icon: AlertTriangle,   label: "Cases",            roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
   { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: null },
@@ -88,8 +88,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
     queryFn: () => api.get("/personas").then(r => r.data),
   });
 
+  const ROLE_LABELS: Record<string, string> = {
+    control_owner:        "DevSecOps",
+    security_lead:        "Security Lead",
+    disclosure_committee: "Disclosure Committee",
+    independent_auditor:  "External Auditor",
+    audit_committee:      "Audit Committee",
+  };
+
   const allPersonas: Array<{ id: string; name: string; role: string; title: string }> = [
-    { id: "PUBLIC", name: "Public (no role)", role: "public", title: "" },
+    { id: "PUBLIC", name: "Public", role: "public", title: "" },
     ...personas,
   ];
 
@@ -142,14 +150,15 @@ export default function AppShell({ children }: { children: ReactNode }) {
             className="w-full bg-black/20 text-white text-xs rounded border border-white/10 px-2 py-1.5 focus:outline-none focus:border-white/30"
           >
             {allPersonas.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
+              <option key={p.id} value={p.id}>
+                {ROLE_LABELS[p.role] ?? p.name}
+              </option>
             ))}
           </select>
           {currentPersona && currentPersona.role !== "public" && (
-            <div className="mt-1 text-xs text-slate-400">{currentPersona.role.replace(/_/g, " ")}</div>
-          )}
-          {currentPersona?.title && (
-            <div className="mt-0.5 text-xs text-slate-500 truncate">{currentPersona.title}</div>
+            <div className="mt-1 text-xs text-slate-400">
+              {currentPersona.name} · {ROLE_LABELS[currentPersona.role] ?? currentPersona.role.replace(/_/g, " ")}
+            </div>
           )}
         </div>
 

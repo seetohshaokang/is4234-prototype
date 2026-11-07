@@ -1,8 +1,9 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useState } from "react";
 import api from "../api/client";
+import { useAppStore } from "../store/useAppStore";
 import Card, { CardHeader, CardBody } from "../components/Card";
 
 interface Interval {
@@ -233,15 +234,67 @@ function versionStatusBadge(status: string) {
   );
 }
 
+const inputCls = "w-full text-sm border border-slate-300 rounded-md px-3 py-1.5 focus:outline-none focus:border-blue-500";
+
 export default function SCCDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { actorId } = useAppStore();
+  const qc = useQueryClient();
   const today = new Date().toISOString().slice(0, 10);
+
+  const [showRevise, setShowRevise] = useState(false);
+  const [showDeprecate, setShowDeprecate] = useState(false);
+  const [reviseForm, setReviseForm] = useState({
+    assertion_text: "", reason: "",
+    target_uptime_pct: "99.0", rolling_window_days: "365",
+    max_single_downtime_days: "7", evidence_type: "TESTED",
+  });
+  const [deprecateReason, setDeprecateReason] = useState("");
+  const [formError, setFormError] = useState("");
+
+  const { data: personas = [] } = useQuery<{ id: string; name: string; role: string }[]>({
+    queryKey: ["personas"],
+    queryFn: () => api.get("/personas").then(r => r.data),
+  });
+  const isAuditor = personas.find(p => p.id === actorId)?.role === "independent_auditor";
+  const personaName = (id: string) => personas.find(p => p.id === id)?.name ?? id;
 
   const { data: scc, isLoading, error } = useQuery<SCCDetail>({
     queryKey: ["scc", id],
     queryFn: () => api.get(`/sccs/${id}`).then(r => r.data),
     enabled: !!id,
+  });
+
+  const reviseMut = useMutation({
+    mutationFn: () => api.post(`/sccs/${id}/revise`, {
+      assertion_text: reviseForm.assertion_text,
+      reason: reviseForm.reason,
+      target_uptime_pct: parseFloat(reviseForm.target_uptime_pct),
+      rolling_window_days: parseInt(reviseForm.rolling_window_days),
+      max_single_downtime_days: parseInt(reviseForm.max_single_downtime_days),
+      evidence_type: reviseForm.evidence_type,
+    }, { params: { actor_id: actorId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scc", id] });
+      qc.invalidateQueries({ queryKey: ["sccs"] });
+      setShowRevise(false);
+      setReviseForm({ assertion_text: "", reason: "", target_uptime_pct: "99.0", rolling_window_days: "365", max_single_downtime_days: "7", evidence_type: "TESTED" });
+      setFormError("");
+    },
+    onError: (e: any) => setFormError(e.response?.data?.detail ?? "Revise failed"),
+  });
+
+  const deprecateMut = useMutation({
+    mutationFn: () => api.post(`/sccs/${id}/deprecate`, { reason: deprecateReason }, { params: { actor_id: actorId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["scc", id] });
+      qc.invalidateQueries({ queryKey: ["sccs"] });
+      setShowDeprecate(false);
+      setDeprecateReason("");
+      setFormError("");
+    },
+    onError: (e: any) => setFormError(e.response?.data?.detail ?? "Deprecate failed"),
   });
 
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
@@ -252,26 +305,120 @@ export default function SCCDetail() {
   );
 
   const sortedVersions = [...scc.versions].sort((a, b) => a.version - b.version);
+  const activeVersion = sortedVersions.find(v => v.status === "ACTIVE");
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start gap-3">
-        <button
-          onClick={() => navigate("/sccs")}
-          className="mt-1 text-slate-400 hover:text-slate-700 transition-colors"
-        >
-          <ArrowLeft size={18} />
-        </button>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-sm text-slate-400">{scc.id}</span>
-            <ChevronRight size={14} className="text-slate-300" />
-            <h1 className="text-2xl font-bold text-slate-900">{scc.title}</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <button
+            onClick={() => navigate("/sccs")}
+            className="mt-1 text-slate-400 hover:text-slate-700 transition-colors"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sm text-slate-400">{scc.id}</span>
+              <ChevronRight size={14} className="text-slate-300" />
+              <h1 className="text-2xl font-bold text-slate-900">{scc.title}</h1>
+            </div>
           </div>
-          <p className="text-sm text-slate-500 mt-0.5">Owner: {scc.owner_id}</p>
         </div>
+        {isAuditor && activeVersion && (
+          <div className="flex gap-2 flex-shrink-0">
+            <button
+              onClick={() => { setShowRevise(v => !v); setShowDeprecate(false); setFormError(""); }}
+              className="text-sm font-medium px-3 py-1.5 rounded-md border border-amber-300 text-amber-700 hover:bg-amber-50 transition-colors"
+            >
+              Revise
+            </button>
+            <button
+              onClick={() => { setShowDeprecate(v => !v); setShowRevise(false); setFormError(""); }}
+              className="text-sm font-medium px-3 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition-colors"
+            >
+              Deprecate
+            </button>
+          </div>
+        )}
       </div>
+
+      {formError && (
+        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">{formError}</div>
+      )}
+
+      {/* Revise form */}
+      {showRevise && isAuditor && (
+        <Card>
+          <CardHeader><h2 className="text-sm font-semibold text-slate-700">Revise SCC — New Version</h2></CardHeader>
+          <CardBody className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Reason for revision</label>
+                <input value={reviseForm.reason} onChange={e => setReviseForm(f => ({ ...f, reason: e.target.value }))} className={inputCls} placeholder="Why is this revision needed?" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Updated Assertion Text <span className="text-slate-400">(semicolon-separated)</span></label>
+                <textarea value={reviseForm.assertion_text} onChange={e => setReviseForm(f => ({ ...f, assertion_text: e.target.value }))} rows={3} className={inputCls} placeholder={activeVersion?.assertion_text ?? "Criteria A; Criteria B"} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Target Uptime %</label>
+                <input type="number" value={reviseForm.target_uptime_pct} onChange={e => setReviseForm(f => ({ ...f, target_uptime_pct: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Rolling Window (days)</label>
+                <input type="number" value={reviseForm.rolling_window_days} onChange={e => setReviseForm(f => ({ ...f, rolling_window_days: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Max Single Downtime (days)</label>
+                <input type="number" value={reviseForm.max_single_downtime_days} onChange={e => setReviseForm(f => ({ ...f, max_single_downtime_days: e.target.value }))} className={inputCls} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Evidence Type</label>
+                <select value={reviseForm.evidence_type} onChange={e => setReviseForm(f => ({ ...f, evidence_type: e.target.value }))} className={inputCls}>
+                  <option value="TESTED">TESTED</option>
+                  <option value="ATTESTED">ATTESTED</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => reviseMut.mutate()}
+                disabled={!reviseForm.assertion_text || !reviseForm.reason || reviseMut.isPending}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
+              >
+                {reviseMut.isPending ? "Revising…" : "Publish Revision"}
+              </button>
+              <button onClick={() => setShowRevise(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-md transition-colors">Cancel</button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
+
+      {/* Deprecate form */}
+      {showDeprecate && isAuditor && (
+        <Card>
+          <CardHeader><h2 className="text-sm font-semibold text-red-700">Deprecate SCC</h2></CardHeader>
+          <CardBody className="space-y-3">
+            <p className="text-sm text-slate-600">This will mark the active version as DEPRECATED and close its uptime tracking immediately.</p>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">Reason</label>
+              <textarea value={deprecateReason} onChange={e => setDeprecateReason(e.target.value)} rows={2} className={inputCls} placeholder="Why is this SCC being deprecated?" />
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => deprecateMut.mutate()}
+                disabled={!deprecateReason || deprecateMut.isPending}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
+              >
+                {deprecateMut.isPending ? "Deprecating…" : "Confirm Deprecation"}
+              </button>
+              <button onClick={() => setShowDeprecate(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium px-4 py-2 rounded-md transition-colors">Cancel</button>
+            </div>
+          </CardBody>
+        </Card>
+      )}
 
       {/* Version chain */}
       <div className="space-y-4">

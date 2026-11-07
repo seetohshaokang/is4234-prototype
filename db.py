@@ -247,12 +247,22 @@ class Finding(SQLModel, table=True):
     title: str = ""
     description: str = ""
     level: Optional[int] = None
+    assigned_to_id: Optional[str] = Field(default=None, foreign_key="person.id")
 
 
 class CaseNote(SQLModel, table=True):
     __tablename__ = "casenote"
     id: Optional[int] = Field(default=None, primary_key=True)
     finding_id: str = Field(foreign_key="finding.id")
+    author_id: str = Field(foreign_key="person.id")
+    created_on: date
+    body: str
+
+
+class ChangeRequestNote(SQLModel, table=True):
+    __tablename__ = "changerequestnote"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    cr_id: str = Field(foreign_key="changerequest.id")
     author_id: str = Field(foreign_key="person.id")
     created_on: date
     body: str

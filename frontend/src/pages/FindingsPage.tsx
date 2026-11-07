@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import api from "../api/client";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
+import CasePanel from "../components/CasePanel";
 
 interface Finding {
   id: string;
@@ -15,6 +15,7 @@ interface Finding {
   closed_on: string | null;
   days_open: number | null;
   level: number | null;
+  assigned_to_name: string | null;
   source: string;
   title: string;
   description: string;
@@ -62,6 +63,7 @@ function FilterPill({
 export default function FindingsPage() {
   const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
   const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: findings = [], isLoading } = useQuery<Finding[]>({
     queryKey: ["findings"],
@@ -143,6 +145,7 @@ export default function FindingsPage() {
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned To</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Days Open</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened On</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed On</th>
@@ -167,6 +170,7 @@ export default function FindingsPage() {
                           </span>
                         ) : <span className="text-xs text-slate-300">—</span>}
                       </td>
+                      <td className="px-5 py-2.5 text-xs text-slate-500">{f.assigned_to_name ?? <span className="text-slate-300">—</span>}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-500">
                         {f.days_open != null ? (
                           <span className={f.days_open > 60 ? "text-red-600 font-medium" : ""}>{f.days_open}d</span>
@@ -176,12 +180,12 @@ export default function FindingsPage() {
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.closed_on ?? "—"}</td>
                       <td className="px-5 py-2.5 text-xs text-slate-400">{f.source}</td>
                       <td className="px-5 py-2.5 text-right">
-                        <Link
-                          to={`/findings/${f.id}`}
-                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        <button
+                          onClick={() => setSelectedId(f.id)}
+                          className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-3 py-1.5 transition-colors whitespace-nowrap"
                         >
-                          View details →
-                        </Link>
+                          View details
+                        </button>
                       </td>
                     </tr>
                   );
@@ -191,6 +195,10 @@ export default function FindingsPage() {
           )}
         </CardBody>
       </Card>
+
+      {selectedId && (
+        <CasePanel id={selectedId} onClose={() => setSelectedId(null)} />
+      )}
     </div>
   );
 }

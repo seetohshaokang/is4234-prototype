@@ -2,77 +2,62 @@ import { driver, type DriveStep } from "driver.js";
 import "driver.js/dist/driver.css";
 import type { NavigateFunction } from "react-router-dom";
 
-// Steps that live on a specific page get an entry here: step index -> route to
-// navigate to before highlighting. Sidebar elements need no navigation.
 const STEP_NAV: Record<number, string> = {
-  4: "/controls",
-  7: "/findings",
-  10: "/audit",
-  14: "/",
+  3: "/checks",
+  4: "/changes",
+  5: "/findings",
+  6: "/escalations",
+  7: "/audit",
 };
 
 const steps: DriveStep[] = [
   {
     popover: {
-      title: "Welcome to Disclosure Gate",
+      title: "Welcome to SCC Library",
       description:
-        "A proof-of-concept disclosure gate built around the NimbusWatch case study (2017–2020). Checkpoint buttons walk that company's timeline; everything else lets you inject your own events — a preview of how a production version would behave.",
+        "A proof-of-concept Security Citation Code library built around the SolarWinds case study (2017–2020). Checkpoint buttons walk that company's timeline; you can also act as any persona and interact with the system directly.",
+      side: "over",
+      align: "center",
     },
   },
   {
-    element: 'a[href="/"]',
+    element: 'a[href="/sccs"]',
     popover: {
-      title: "Dashboard",
-      description: "Overview: claim verdicts, open findings, active overrides, and the 'status quo vs with gate' comparison.",
+      title: "SCC Library",
+      description: "All active and historical Security Citation Codes. Each SCC is a measurable security assertion tracked like an SLA — UPHELD, DOWN, or UNKNOWN based on automated evidence.",
       side: "right",
     },
   },
   {
-    element: 'a[href="/claims"]',
+    element: 'a[href="/checks"]',
     popover: {
-      title: "Claim Registry",
-      description: "The public security claims. Expand a row to inject: Publish (blocked claims refuse) or Withdraw.",
+      title: "Security Checks",
+      description: "The automated evidence tests behind each SCC. A failing check puts the mapped SCC DOWN and opens a finding automatically.",
       side: "right",
     },
   },
   {
-    element: 'a[href="/controls"]',
+    element: 'a[href="/checks"]',
     popover: {
-      title: "Control Tests",
-      description: "The automated evidence tests behind the claims. Never tested = BLOCK.",
+      title: "Security Checks",
+      description: "Each check has a collector script — the measurement tool itself is versioned and must be approved by the External Auditor before results count.",
       side: "right",
     },
   },
   {
-    element: "[data-tour='run-tests']",
+    element: 'a[href="/changes"]',
     popover: {
-      title: "Inject: run tests",
-      description: "Re-runs every control test against the current snapshot. New failures auto-open findings and re-block claims.",
-      side: "bottom",
-    },
-  },
-  {
-    element: 'a[href="/gate"]',
-    popover: {
-      title: "Gate Review",
-      description: "Per-claim verdicts with the rules that fired. Disclosure-committee roles can inject an Override here — BLOCK downgrades to ESCALATE until it expires. The claim's owner cannot override it (independence rule).",
+      title: "Change Requests",
+      description: "Any change to an SCC — CREATE, REVISION, or DEPRECATE — goes through a formal change request approved by the External Auditor. The full history is preserved.",
       side: "right",
     },
   },
   {
     element: 'a[href="/findings"]',
     popover: {
-      title: "Findings",
-      description: "Open security findings. They block mapped claims and age toward escalation.",
+      title: "Cases",
+      description: "Open security findings. Each is linked to a control and blocks the mapped SCC's uptime while open. Click 'View details' to manage a case — assign it, change status, add notes, or escalate.",
       side: "right",
-    },
-  },
-  {
-    element: "[data-tour='report-finding']",
-    popover: {
-      title: "Inject: report a finding",
-      description: "File your own finding against any control with any severity. HIGH/CRITICAL immediately blocks linked claims and starts escalation ageing. Expand a finding's row to propose/approve a risk acceptance.",
-      side: "bottom",
     },
   },
   {
@@ -87,46 +72,24 @@ const steps: DriveStep[] = [
     element: 'a[href="/audit"]',
     popover: {
       title: "Audit Trail",
-      description: "Hash-chained log of every action in the system.",
-      side: "right",
-    },
-  },
-  {
-    element: "[data-tour='tamper-demo']",
-    popover: {
-      title: "Inject: tamper demo",
-      description: "Corrupts a copy of the audit log and re-verifies — the hash chain catches it. Verify Chain checks the real log.",
-      side: "bottom",
-    },
-  },
-  {
-    element: "[data-tour='clock']",
-    popover: {
-      title: "Sim clock",
-      description: "Inject time: +1 day ages findings and expires overrides. Jump takes you to any date and re-evaluates everything.",
-      side: "right",
-    },
-  },
-  {
-    element: "[data-tour='checkpoints']",
-    popover: {
-      title: "Checkpoints — the story",
-      description: "Click any CP to jump there. Blue = applied. Forward jumps keep your injections; backward jumps replay the story and wipe them. Reset returns to before CP1.",
+      description: "Every action in the system is recorded in a hash-chained append-only log. Filter by category or search by actor and subject to trace any event.",
       side: "right",
     },
   },
   {
     element: "[data-tour='role']",
     popover: {
-      title: "Active role",
-      description: "Who you are right now. Permissions follow the person — try creating an override as T. Grant (claim owner) vs M. Okafor (disclosure committee).",
+      title: "Active persona",
+      description: "Switch between personas to see role-based access in action. David Ng (External Auditor) can create and revise SCCs. Sharon Wong (Audit Committee) sees committee-level escalations.",
       side: "right",
     },
   },
   {
     popover: {
       title: "You're set",
-      description: "Start at CP1 and walk the story, injecting as you go. The full playbook — including a verification checklist — is in DEMO-GUIDE.md. Reopen this tour anytime with the ? button at the bottom of the sidebar.",
+      description: "Start the Guided Demo to walk the SolarWinds timeline checkpoint by checkpoint, or explore freely. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
+      side: "over",
+      align: "center",
     },
   },
 ];

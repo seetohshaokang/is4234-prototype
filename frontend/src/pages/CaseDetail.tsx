@@ -22,6 +22,8 @@ interface CaseFinding {
   description: string;
   root_cause_note: string | null;
   level: number | null;
+  assigned_to_id: string | null;
+  assigned_to_name: string | null;
 }
 
 interface CaseEscalation {
@@ -83,6 +85,11 @@ export default function CaseDetail() {
     queryFn: () => api.get(`/findings/${id}`).then(r => r.data),
   });
 
+  const { data: personas = [] } = useQuery<{ id: string; name: string; role: string }[]>({
+    queryKey: ["personas"],
+    queryFn: () => api.get("/personas").then(r => r.data),
+  });
+
   const { data: caseEscalations = [] } = useQuery<CaseEscalation[]>({
     queryKey: ["case-escalations", id],
     queryFn: () => api.get("/escalations").then(r =>
@@ -103,6 +110,7 @@ export default function CaseDetail() {
     qc.invalidateQueries({ queryKey: ["case-escalations", id] });
     qc.invalidateQueries({ queryKey: ["case-notes", id] });
     qc.invalidateQueries({ queryKey: ["escalations"] });
+    qc.invalidateQueries({ queryKey: ["findings"] });
   };
   const onFail = (e: any) => setError(e.response?.data?.detail ?? "Action failed");
 
@@ -124,6 +132,15 @@ export default function CaseDetail() {
     onError: onFail,
   });
 
+  const assignMut = useMutation({
+    mutationFn: (person_id: string) =>
+      api.patch(`/findings/${id}/assign`, { person_id }, { params: { actor_id: actorId } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["finding", id] });
+      qc.invalidateQueries({ queryKey: ["findings"] });
+    },
+  });
+
   const noteMut = useMutation({
     mutationFn: (body: string) =>
       api.post(`/findings/${id}/notes`, { body, author_id: actorId }),
@@ -138,7 +155,7 @@ export default function CaseDetail() {
 
   const isActive = finding.status === "OPEN" || finding.status === "IN_REVIEW";
   const nextLevel = finding.level !== null && finding.level < 3 ? finding.level + 1 : null;
-  const hasCommitteeResponse = caseEscalations.some(e => e.level === 3 && e.responses?.length > 0);
+  const hasCommitteeResponse = caseEscalations.some(e => e.level === 3 && (e.responses as unknown[])?.length > 0);
   const awaitingCommittee = finding.level === 3 && !hasCommitteeResponse;
 
   const allowed = (t: Transition) =>
@@ -155,8 +172,7 @@ export default function CaseDetail() {
   };
 
   return (
-    <div className="space-y-5 max-w-3xl">
-      {/* Back */}
+    <div className="space-y-4 max-w-3xl">
       <button
         onClick={() => navigate(-1)}
         className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
@@ -165,234 +181,168 @@ export default function CaseDetail() {
         Back to Cases
       </button>
 
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-mono text-xs text-slate-400">{finding.id}</span>
-            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${SEVERITY_COLORS[finding.severity] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
-              {finding.severity}
-            </span>
-            <Badge value={finding.status} />
-            {finding.level && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border bg-purple-100 text-purple-700 border-purple-200">
-                L{finding.level}
-              </span>
+      <div className="space-y-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="font-mono text-xs text-slate-400">{finding.id}</span>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${SEVERITY_COLORS[finding.severity] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>{finding.severity}</span>
+              <Badge value={finding.status} />
+              {finding.level && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border bg-purple-100 text-purple-700 border-purple-200">L{finding.level}</span>}
+            </div>
+            <h1 className="text-xl font-bold text-slate-900">{finding.title}</h1>
+          </div>
+          <div className="flex gap-2 flex-shrink-0">
+            {transitions.map(t => {
+              const blocked = t.next === "RESOLVED" && awaitingCommittee;
+              return (
+                <button
+                  key={t.next}
+                  onClick={() => onTransition(t)}
+                  disabled={statusMut.isPending || blocked}
+                  title={blocked ? "L3 cases need a formal committee response before they can be resolved" : undefined}
+                  className={`text-sm font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${t.style}`}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+            {canEscalate && (
+              <button
+                onClick={() => levelMut.mutate(nextLevel!)}
+                disabled={levelMut.isPending}
+                className="text-sm font-medium px-4 py-2 rounded-md border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors"
+              >
+                Escalate to L{nextLevel}
+              </button>
             )}
           </div>
-          <h1 className="text-xl font-bold text-slate-900">{finding.title}</h1>
         </div>
-        <div className="flex gap-2 flex-shrink-0">
-          {transitions.map(t => {
-            const blocked = t.next === "RESOLVED" && awaitingCommittee;
-            return (
-              <button
-                key={t.next}
-                onClick={() => onTransition(t)}
-                disabled={statusMut.isPending || blocked}
-                title={blocked ? "L3 cases need a formal committee response before they can be resolved" : undefined}
-                className={`text-sm font-medium px-4 py-2 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${t.style}`}
-              >
-                {t.label}
-              </button>
-            );
-          })}
-          {canEscalate && (
-            <button
-              onClick={() => levelMut.mutate(nextLevel)}
-              disabled={levelMut.isPending}
-              className="text-sm font-medium px-4 py-2 rounded-md border border-purple-300 text-purple-700 hover:bg-purple-50 transition-colors"
-            >
-              Escalate to L{nextLevel}
-            </button>
-          )}
-        </div>
-      </div>
 
-      {error && (
-        <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="rounded-md px-4 py-3 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
+            {error}
+          </div>
+        )}
 
-      {readOnly && (
-        <div className="rounded-md px-4 py-3 text-sm bg-slate-50 text-slate-600 border border-slate-200">
-          Read-only view — your role can see this case but not change it.
-        </div>
-      )}
+        {readOnly && (
+          <div className="rounded-md px-4 py-3 text-sm bg-slate-50 text-slate-600 border border-slate-200">
+            Read-only view — your role can see this case but not change it.
+          </div>
+        )}
 
-      {awaitingCommittee && isActive && can.resolve(role) && (
-        <div className="rounded-md px-4 py-3 text-sm bg-purple-50 text-purple-800 border border-purple-200">
-          This case is at L3 — it can be resolved once the disclosure committee records a formal response.
-        </div>
-      )}
+        {awaitingCommittee && isActive && can.resolve(role) && (
+          <div className="rounded-md px-4 py-3 text-sm bg-purple-50 text-purple-800 border border-purple-200">
+            This case is at L3 — it can be resolved once the disclosure committee records a formal response.
+          </div>
+        )}
 
-      {closing && (
-        <Card>
-          <CardBody className="space-y-3">
-            <div className="text-sm font-semibold text-slate-700">Close as false alarm</div>
-            <p className="text-xs text-slate-500">
-              Explain why this isn't a real problem. The reason is saved as a case note and in the audit trail.
-            </p>
-            <textarea
-              value={closeReason}
-              onChange={e => setCloseReason(e.target.value)}
-              rows={3}
-              placeholder="Why is this a false alarm?"
-              className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 resize-none"
-            />
-            <div className="flex items-center justify-between">
-              <span className={`text-xs ${closeReason.trim().length >= CLOSE_REASON_MIN ? "text-green-600" : "text-slate-400"}`}>
-                {closeReason.trim().length}/{CLOSE_REASON_MIN} characters minimum
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => { setClosing(false); setCloseReason(""); }}
-                  className="text-sm px-4 py-2 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => statusMut.mutate({ status: "CLOSED", reason: closeReason.trim() })}
-                  disabled={closeReason.trim().length < CLOSE_REASON_MIN || statusMut.isPending}
-                  className="text-sm font-medium px-4 py-2 rounded-md bg-slate-600 hover:bg-slate-700 text-white disabled:opacity-40"
-                >
-                  Confirm close
-                </button>
+        {closing && (
+          <Card>
+            <CardBody className="space-y-3">
+              <div className="text-sm font-semibold text-slate-700">Close as false alarm</div>
+              <p className="text-xs text-slate-500">
+                Explain why this isn't a real problem. The reason is saved as a case note and in the audit trail.
+              </p>
+              <textarea
+                value={closeReason}
+                onChange={e => setCloseReason(e.target.value)}
+                rows={3}
+                placeholder="Why is this a false alarm?"
+                className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 resize-none"
+              />
+              <div className="flex items-center justify-between">
+                <span className={`text-xs ${closeReason.trim().length >= CLOSE_REASON_MIN ? "text-green-600" : "text-slate-400"}`}>
+                  {closeReason.trim().length}/{CLOSE_REASON_MIN} characters minimum
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { setClosing(false); setCloseReason(""); }}
+                    className="text-sm px-4 py-2 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => statusMut.mutate({ status: "CLOSED", reason: closeReason.trim() })}
+                    disabled={closeReason.trim().length < CLOSE_REASON_MIN || statusMut.isPending}
+                    className="text-sm font-medium px-4 py-2 rounded-md bg-slate-600 hover:bg-slate-700 text-white disabled:opacity-40"
+                  >
+                    Confirm close
+                  </button>
+                </div>
               </div>
-            </div>
-          </CardBody>
-        </Card>
-      )}
+            </CardBody>
+          </Card>
+        )}
 
-      {/* Metadata */}
-      <Card>
-        <CardBody>
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            <div>
-              <dt className="text-xs font-medium text-slate-400 mb-0.5">Check</dt>
-              <dd className="font-mono text-blue-600">{finding.check_id ?? finding.control_id}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400 mb-0.5">Source</dt>
-              <dd className="text-slate-700">{finding.source}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400 mb-0.5">Opened on</dt>
-              <dd className="text-slate-700">{finding.opened_on}</dd>
-            </div>
-            <div>
-              <dt className="text-xs font-medium text-slate-400 mb-0.5">Closed on</dt>
-              <dd className="text-slate-700">{finding.closed_on ?? "—"}</dd>
-            </div>
-            {finding.days_open != null && (
-              <div>
-                <dt className="text-xs font-medium text-slate-400 mb-0.5">Days open</dt>
-                <dd className={`font-medium ${finding.days_open > 60 ? "text-red-600" : "text-slate-700"}`}>
-                  {finding.days_open}d
+        {/* Metadata */}
+        <Card>
+          <CardBody>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
+              <div><dt className="text-xs font-medium text-slate-400 mb-0.5">Check</dt><dd className="font-mono text-blue-600">{finding.check_id ?? finding.control_id}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-400 mb-0.5">Source</dt><dd className="text-slate-700">{finding.source}</dd></div>
+              <div className="col-span-2">
+                <dt className="text-xs font-medium text-slate-400 mb-1">Assigned To</dt>
+                <dd className="flex items-center gap-2">
+                  <span className="text-sm text-slate-700">{finding.assigned_to_name ?? <span className="text-slate-400 italic">Unassigned</span>}</span>
+                  <select value={finding.assigned_to_id ?? ""} onChange={e => assignMut.mutate(e.target.value)} disabled={assignMut.isPending} className="text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:border-blue-400 text-slate-600">
+                    <option value="">— Assign to —</option>
+                    {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
                 </dd>
               </div>
-            )}
-          </dl>
-          {finding.description && (
-            <div className="mt-4 pt-4 border-t border-slate-100">
-              <div className="text-xs font-medium text-slate-400 mb-1">Description</div>
-              <p className="text-sm text-slate-700">{finding.description}</p>
-            </div>
-          )}
-        </CardBody>
-      </Card>
+              <div><dt className="text-xs font-medium text-slate-400 mb-0.5">Opened on</dt><dd className="text-slate-700">{finding.opened_on}</dd></div>
+              <div><dt className="text-xs font-medium text-slate-400 mb-0.5">Closed on</dt><dd className="text-slate-700">{finding.closed_on ?? "—"}</dd></div>
+              {finding.days_open != null && <div><dt className="text-xs font-medium text-slate-400 mb-0.5">Days open</dt><dd className={`font-medium ${finding.days_open > 60 ? "text-red-600" : "text-slate-700"}`}>{finding.days_open}d</dd></div>}
+            </dl>
+            {finding.description && <div className="mt-4 pt-4 border-t border-slate-100"><div className="text-xs font-medium text-slate-400 mb-1">Description</div><p className="text-sm text-slate-700">{finding.description}</p></div>}
+          </CardBody>
+        </Card>
 
-      {/* Escalation ladder */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-sm font-semibold text-slate-700">Escalation Level</h2>
-        </CardHeader>
-        <CardBody className="p-0">
-          <table className="w-full text-sm">
-            <tbody>
+        <Card>
+          <CardHeader><h2 className="text-sm font-semibold text-slate-700">Escalation Level</h2></CardHeader>
+          <CardBody className="p-0">
+            <table className="w-full text-sm"><tbody>
               {ESCALATION_LADDER.map(row => {
                 const esc = caseEscalations.find(e => e.level === row.level);
                 const isCurrentLevel = finding.level === row.level;
                 const isPastLevel = finding.level !== null && row.level < finding.level;
                 return (
-                  <tr
-                    key={row.level}
-                    className={`border-b border-slate-100 last:border-0 ${
-                      isCurrentLevel ? "bg-purple-50" : isPastLevel ? "opacity-40" : ""
-                    }`}
-                  >
-                    <td className="px-5 py-3 w-12">
-                      <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${
-                        isCurrentLevel
-                          ? "bg-purple-600 text-white border-purple-600"
-                          : isPastLevel
-                          ? "bg-slate-200 text-slate-500 border-slate-200"
-                          : "bg-white text-slate-400 border-slate-300"
-                      }`}>
-                        L{row.level}
-                      </span>
-                    </td>
+                  <tr key={row.level} className={`border-b border-slate-100 last:border-0 ${isCurrentLevel ? "bg-purple-50" : isPastLevel ? "opacity-40" : ""}`}>
+                    <td className="px-5 py-3 w-12"><span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold border ${isCurrentLevel ? "bg-purple-600 text-white border-purple-600" : isPastLevel ? "bg-slate-200 text-slate-500 border-slate-200" : "bg-white text-slate-400 border-slate-300"}`}>L{row.level}</span></td>
                     <td className="px-4 py-3 font-medium text-slate-700">{row.role}</td>
                     <td className="px-4 py-3 text-slate-500 text-xs">{row.action}</td>
-                    <td className="px-4 py-3 text-right">
-                      {esc && <Badge value={esc.status} />}
-                    </td>
+                    <td className="px-4 py-3 text-right">{esc && <Badge value={esc.status} />}</td>
                   </tr>
                 );
               })}
-            </tbody>
-          </table>
-          {!finding.level && (
-            <div className="px-5 py-3 text-xs text-slate-400 border-t border-slate-100">
-              No escalation level set — pick up the case to begin at L1.
-            </div>
-          )}
-        </CardBody>
-      </Card>
+            </tbody></table>
+            {!finding.level && <div className="px-5 py-3 text-xs text-slate-400 border-t border-slate-100">No escalation level set — pick up the case to begin at L1.</div>}
+          </CardBody>
+        </Card>
 
-      {/* Notes */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-sm font-semibold text-slate-700">Case Notes</h2>
-        </CardHeader>
-        <CardBody className="space-y-4">
-          {notes.length === 0 && (
-            <p className="text-sm text-slate-400">No notes yet.</p>
-          )}
-          {notes.map(n => (
-            <div key={n.id} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs font-medium text-slate-700">{n.author_name}</span>
-                <span className="text-xs text-slate-400">{n.created_on}</span>
+        <Card>
+          <CardHeader><h2 className="text-sm font-semibold text-slate-700">Case Notes</h2></CardHeader>
+          <CardBody className="space-y-4">
+            {notes.length === 0 && <p className="text-sm text-slate-400">No notes yet.</p>}
+            {notes.map(n => (
+              <div key={n.id} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
+                <div className="flex items-center gap-2 mb-1"><span className="text-xs font-medium text-slate-700">{n.author_name}</span><span className="text-xs text-slate-400">{n.created_on}</span></div>
+                <p className="text-sm text-slate-600 whitespace-pre-wrap">{n.body}</p>
               </div>
-              <p className="text-sm text-slate-600 whitespace-pre-wrap">{n.body}</p>
-            </div>
-          ))}
+            ))}
 
-          {/* Add note form */}
-          {can.addNote(role) && (
-          <div className="pt-2 border-t border-slate-100">
-            <textarea
-              value={noteBody}
-              onChange={e => setNoteBody(e.target.value)}
-              placeholder="Add a note…"
-              rows={3}
-              className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 resize-none"
-            />
-            <div className="mt-2 flex justify-end">
-              <button
-                onClick={() => noteMut.mutate(noteBody)}
-                disabled={!noteBody.trim() || noteMut.isPending}
-                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
-              >
-                Add note
-              </button>
-            </div>
-          </div>
-          )}
-        </CardBody>
-      </Card>
+            {can.addNote(role) && (
+              <div className="pt-2 border-t border-slate-100">
+                <textarea value={noteBody} onChange={e => setNoteBody(e.target.value)} placeholder="Add a note…" rows={3} className="w-full text-sm border border-slate-200 rounded-md px-3 py-2 focus:outline-none focus:border-blue-400 resize-none" />
+                <div className="mt-2 flex justify-end">
+                  <button onClick={() => noteMut.mutate(noteBody)} disabled={!noteBody.trim() || noteMut.isPending} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors">Add note</button>
+                </div>
+              </div>
+            )}
+          </CardBody>
+        </Card>
+      </div>
     </div>
   );
 }

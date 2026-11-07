@@ -16,7 +16,8 @@ import { DEMO_STEPS } from "../lib/demoScript";
 interface Persona { id: string; name: string; role: string; title: string; }
 
 const NAV_PUBLIC = [
-  { to: "/sccs", icon: Library, label: "Library" },
+  { to: "/sccs",  icon: Library, label: "Library" },
+  { to: "/about", icon: Info,    label: "About" },
 ];
 
 const NAV_INTERNAL = [

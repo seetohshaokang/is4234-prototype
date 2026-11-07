@@ -412,12 +412,11 @@ def patch_case_statuses() -> None:
         "CASE_2018_005": FindingStatus.IN_REVIEW,
         "CASE_2019_006": FindingStatus.IN_REVIEW,
     }
-    # level to seed per case: IN_REVIEW cases get escalation records
+    # level to seed per case: open escalations only on live cases —
+    # a resolved case has nothing left to demand a decision on
     escalation_levels = {
-        "CASE_2018_005": [1, 2],
+        "CASE_2018_005": [1, 2, 3],
         "CASE_2019_006": [1],
-        "CASE_2017_002": [1, 2, 3],
-        "CASE_2017_004": [1],
     }
     with get_session() as s:
         for fid, new_status in patches.items():

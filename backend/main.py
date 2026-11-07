@@ -2,10 +2,12 @@
 
 import json
 from datetime import date
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from sqlmodel import select
 
@@ -33,9 +35,10 @@ from services import (
 )
 from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
-from seed import seed_db, generate_snapshots, apply_all_checkpoints
+from seed import seed_db, generate_snapshots, apply_all_checkpoints, patch_case_statuses
 
 app = FastAPI(title="SCC Library API", version="1.0.0")
+router = APIRouter()
 create_tables()
 
 app.add_middleware(
@@ -80,6 +83,7 @@ class RejectBody(BaseModel):
 
 class CaseStatusUpdate(BaseModel):
     status: str
+    reason: Optional[str] = None  # required when closing as false alarm
 
 
 class CaseNoteCreate(BaseModel):
@@ -157,6 +161,40 @@ def _actor(actor_id: str) -> str:
     return actor_id or "P-GRANT"
 
 
+# ── Case & escalation permissions ─────────────────────────────────────────────
+# Audit Committee and the independent auditor are read-only on cases/escalations.
+
+CASE_PICKUP_ROLES   = {Role.CONTROL_OWNER, Role.SECURITY_LEAD}
+CASE_RESOLVE_ROLES  = {Role.CONTROL_OWNER, Role.SECURITY_LEAD}
+CASE_CLOSE_ROLES    = {Role.SECURITY_LEAD, Role.DISCLOSURE_COMMITTEE}
+CASE_NOTE_ROLES     = {Role.CONTROL_OWNER, Role.SECURITY_LEAD, Role.DISCLOSURE_COMMITTEE}
+ESCALATE_ROLES      = {2: {Role.CONTROL_OWNER, Role.SECURITY_LEAD}, 3: {Role.SECURITY_LEAD}}
+RESPOND_ROLES       = {Role.DISCLOSURE_COMMITTEE}
+CLOSE_REASON_MIN    = 20
+
+
+def _require_role(session, actor_id: Optional[str], allowed: set, action: str) -> Person:
+    person = session.get(Person, actor_id) if actor_id else None
+    if not person or person.role not in allowed:
+        who = person.name if person else "This persona"
+        raise HTTPException(403, f"{who} is not allowed to {action}.")
+    return person
+
+
+def _close_case_escalations(session, finding_id: str, as_of: date, actor_id: str) -> None:
+    for esc in session.exec(
+        select(Escalation).where(
+            Escalation.finding_id == finding_id,
+            Escalation.status.in_([EscalationStatus.OPEN, EscalationStatus.ACK]),  # type: ignore[attr-defined]
+        )
+    ).all():
+        esc.status = EscalationStatus.RESOLVED
+        esc.resolved_on = as_of
+        session.add(esc)
+        append_event(session, as_of, actor_id, "escalation_resolved", "escalation",
+                     str(esc.id), {"finding_id": finding_id, "reason": "case_closed"})
+
+
 def _intervals_for(session, sccversion_id: str) -> list[dict]:
     ivs = list(session.exec(
         select(StateInterval).where(StateInterval.sccversion_id == sccversion_id)
@@ -198,13 +236,13 @@ def _current_state_on(intervals: list[dict], as_of: date) -> str:
 
 # ── Clock ─────────────────────────────────────────────────────────────────────
 
-@app.get("/clock")
+@router.get("/clock")
 def get_clock_route():
     with get_session() as session:
         return {"date": str(get_clock(session))}
 
 
-@app.post("/clock/set")
+@router.post("/clock/set")
 def set_clock_route(body: ClockSet, actor_id: str = "SYSTEM"):
     with get_session() as session:
         d = date.fromisoformat(body.date)
@@ -212,7 +250,7 @@ def set_clock_route(body: ClockSet, actor_id: str = "SYSTEM"):
         return {"date": str(d)}
 
 
-@app.post("/clock/advance")
+@router.post("/clock/advance")
 def advance_clock_route(body: AdvanceDays, actor_id: str = "SYSTEM"):
     with get_session() as session:
         new_date = advance_clock(session, body.days, _actor(actor_id))
@@ -221,7 +259,7 @@ def advance_clock_route(body: AdvanceDays, actor_id: str = "SYSTEM"):
 
 # ── Personas ──────────────────────────────────────────────────────────────────
 
-@app.get("/personas")
+@router.get("/personas")
 def get_personas():
     with get_session() as session:
         people = list(session.exec(select(Person)).all())
@@ -231,7 +269,7 @@ def get_personas():
 
 # ── SCCs ──────────────────────────────────────────────────────────────────────
 
-@app.get("/sccs")
+@router.get("/sccs")
 def list_sccs():
     with get_session() as session:
         as_of = get_clock(session)
@@ -265,7 +303,7 @@ def list_sccs():
         return result
 
 
-@app.get("/sccs/{scc_id}")
+@router.get("/sccs/{scc_id}")
 def get_scc(scc_id: str):
     with get_session() as session:
         as_of = get_clock(session)
@@ -349,7 +387,7 @@ def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-
 
 # ── Controls & check runs ─────────────────────────────────────────────────────
 
-@app.get("/controls")
+@router.get("/controls")
 def list_controls():
     with get_session() as session:
         controls = list(session.exec(select(Control)).all())
@@ -369,7 +407,7 @@ def list_controls():
         return result
 
 
-@app.get("/test-results")
+@router.get("/test-results")
 def list_test_results(control_id: Optional[str] = None, limit: int = 50):
     with get_session() as session:
         q = select(TestResult).order_by(TestResult.run_on.desc())  # type: ignore[attr-defined]
@@ -386,7 +424,7 @@ def list_test_results(control_id: Optional[str] = None, limit: int = 50):
 
 # ── Checks & Collectors ───────────────────────────────────────────────────────
 
-@app.get("/checks")
+@router.get("/checks")
 def list_checks():
     with get_session() as session:
         defs = list(session.exec(select(CheckDefinition)).all())
@@ -398,7 +436,7 @@ def list_checks():
                 for d in defs]
 
 
-@app.get("/collectors")
+@router.get("/collectors")
 def list_collectors():
     with get_session() as session:
         cols = list(session.exec(select(Collector)).all())
@@ -410,7 +448,7 @@ def list_collectors():
                 for c in cols]
 
 
-@app.post("/collectors")
+@router.post("/collectors")
 def submit_collector_route(body: CollectorSubmitBody, actor_id: str = "P-PRIYA"):
     with get_session() as session:
         col = submit_collector(session, body.check_id, body.version,
@@ -418,7 +456,7 @@ def submit_collector_route(body: CollectorSubmitBody, actor_id: str = "P-PRIYA")
         return {"id": col.id, "status": str(col.status)}
 
 
-@app.post("/collectors/{collector_id}/approve")
+@router.post("/collectors/{collector_id}/approve")
 def approve_collector_route(collector_id: str, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -430,7 +468,7 @@ def approve_collector_route(collector_id: str, actor_id: str = "P-REYES"):
 
 # ── Change Requests ───────────────────────────────────────────────────────────
 
-@app.get("/change-requests")
+@router.get("/change-requests")
 def list_change_requests():
     with get_session() as session:
         crs = list(session.exec(select(ChangeRequest)).all())
@@ -444,7 +482,7 @@ def list_change_requests():
                 for cr in crs]
 
 
-@app.post("/change-requests")
+@router.post("/change-requests")
 def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-GRANT"):
     with get_session() as session:
         try:
@@ -455,7 +493,7 @@ def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-GRAN
             raise HTTPException(403, str(e))
 
 
-@app.post("/change-requests/{cr_id}/approve")
+@router.post("/change-requests/{cr_id}/approve")
 def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
                                   actor_id: str = "P-REYES"):
     with get_session() as session:
@@ -469,7 +507,7 @@ def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
             raise HTTPException(400, str(e))
 
 
-@app.post("/change-requests/{cr_id}/reject")
+@router.post("/change-requests/{cr_id}/reject")
 def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -520,7 +558,7 @@ def add_cr_note(cr_id: str, body: CRNoteCreate):
 
 # ── Findings ──────────────────────────────────────────────────────────────────
 
-@app.get("/findings")
+@router.get("/findings")
 def list_findings(status: Optional[str] = None):
     with get_session() as session:
         as_of = get_clock(session)
@@ -543,7 +581,7 @@ def list_findings(status: Optional[str] = None):
                 for f in findings]
 
 
-@app.get("/findings/{finding_id}")
+@router.get("/findings/{finding_id}")
 def get_finding(finding_id: str):
     with get_session() as session:
         as_of = get_clock(session)
@@ -572,8 +610,19 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
     "CLOSED":    [],
 }
 
-@app.patch("/findings/{finding_id}/status")
-def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: str = "SYSTEM"):
+def _has_committee_response(session, finding_id: str) -> bool:
+    l3_ids = [e.id for e in session.exec(
+        select(Escalation).where(Escalation.finding_id == finding_id, Escalation.level == 3)
+    ).all()]
+    if not l3_ids:
+        return False
+    return session.exec(
+        select(CommitteeResponse).where(CommitteeResponse.escalation_id.in_(l3_ids))  # type: ignore[attr-defined]
+    ).first() is not None
+
+
+@router.patch("/findings/{finding_id}/status")
+def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: Optional[str] = None):
     with get_session() as session:
         as_of = get_clock(session)
         f = session.get(Finding, finding_id)
@@ -582,35 +631,56 @@ def update_finding_status(finding_id: str, body: CaseStatusUpdate, actor_id: str
         allowed = VALID_TRANSITIONS.get(str(f.status), [])
         if body.status not in allowed:
             raise HTTPException(status_code=400, detail=f"Cannot transition from {f.status} to {body.status}")
-        prev_status = str(f.status)
+
+        reason = (body.reason or "").strip()
+        if body.status == "IN_REVIEW":
+            actor = _require_role(session, actor_id, CASE_PICKUP_ROLES, "pick up cases")
+        elif body.status == "RESOLVED":
+            actor = _require_role(session, actor_id, CASE_RESOLVE_ROLES, "resolve cases")
+            if f.level == 3 and not _has_committee_response(session, finding_id):
+                raise HTTPException(400, "An L3 case can only be resolved after the disclosure "
+                                         "committee has recorded a formal response.")
+        else:  # CLOSED
+            actor = _require_role(session, actor_id, CASE_CLOSE_ROLES, "close cases as a false alarm")
+            if len(reason) < CLOSE_REASON_MIN:
+                raise HTTPException(400, f"Closing as a false alarm needs a reason of at least "
+                                         f"{CLOSE_REASON_MIN} characters.")
+
+        old_status = str(f.status)
         f.status = FindingStatus(body.status)
         if body.status == "IN_REVIEW" and f.assigned_to_id is None:
             f.assigned_to_id = _actor(actor_id)
         if body.status in ("RESOLVED", "CLOSED"):
             f.closed_on = as_of
+            _close_case_escalations(session, finding_id, as_of, actor.id)
+        if body.status == "CLOSED":
+            session.add(CaseNote(finding_id=finding_id, author_id=actor.id, created_on=as_of,
+                                 body=f"Closed as false alarm: {reason}"))
         session.add(f)
-        session.flush()
-        append_event(session, as_of, _actor(actor_id), "case_status_changed",
-                     "finding", finding_id,
-                     {"from": prev_status, "to": body.status})
+        append_event(session, as_of, actor.id, "case_status_changed", "finding", finding_id,
+                     {"from": old_status, "to": body.status, **({"reason": reason} if reason else {})})
         session.commit()
         if body.status == "IN_REVIEW" and f.level is None:
-            escalate_case(session, finding_id, 1, "SYSTEM")
+            escalate_case(session, finding_id, 1, actor.id)
         return {"ok": True, "status": body.status}
 
 
-@app.patch("/findings/{finding_id}/level")
-def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: str = "SYSTEM"):
+@router.patch("/findings/{finding_id}/level")
+def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: Optional[str] = None):
     with get_session() as session:
         f = session.get(Finding, finding_id)
         if not f:
             raise HTTPException(status_code=404, detail="Case not found")
-        if body.level not in (1, 2, 3):
-            raise HTTPException(status_code=400, detail="Level must be 1, 2, or 3")
-        if f.level is not None and body.level <= f.level:
-            raise HTTPException(status_code=400, detail="Can only escalate to a higher level")
+        if f.status not in (FindingStatus.OPEN, FindingStatus.IN_REVIEW):
+            raise HTTPException(400, "Only active cases can be escalated")
+        if f.level is None:
+            raise HTTPException(400, "Pick up the case first — it starts at L1")
+        if body.level != f.level + 1 or body.level not in ESCALATE_ROLES:
+            raise HTTPException(400, f"Can only escalate one level at a time (L{f.level} → L{f.level + 1})")
+        actor = _require_role(session, actor_id, ESCALATE_ROLES[body.level],
+                              f"escalate cases to L{body.level}")
         try:
-            esc = escalate_case(session, finding_id, body.level, _actor(actor_id))
+            esc = escalate_case(session, finding_id, body.level, actor.id)
             return {"ok": True, "level": body.level, "escalation_id": esc.id}
         except ValueError as e:
             raise HTTPException(status_code=403, detail=str(e))
@@ -636,7 +706,7 @@ def assign_finding(finding_id: str, body: CaseAssign, actor_id: str = "SYSTEM"):
         return {"ok": True, "assigned_to_id": body.person_id, "assigned_to_name": person.name}
 
 
-@app.get("/findings/{finding_id}/notes")
+@router.get("/findings/{finding_id}/notes")
 def list_case_notes(finding_id: str):
     with get_session() as session:
         notes = list(session.exec(
@@ -655,18 +725,21 @@ def list_case_notes(finding_id: str):
         ]
 
 
-@app.post("/findings/{finding_id}/notes")
+@router.post("/findings/{finding_id}/notes")
 def add_case_note(finding_id: str, body: CaseNoteCreate):
     with get_session() as session:
         f = session.get(Finding, finding_id)
         if not f:
             raise HTTPException(status_code=404, detail="Case not found")
+        if not body.body.strip():
+            raise HTTPException(400, "Note cannot be empty")
+        actor = _require_role(session, body.author_id, CASE_NOTE_ROLES, "add case notes")
         as_of = get_clock(session)
-        note = CaseNote(finding_id=finding_id, author_id=body.author_id, created_on=as_of, body=body.body)
+        note = CaseNote(finding_id=finding_id, author_id=actor.id, created_on=as_of, body=body.body)
         session.add(note)
         session.flush()
-        append_event(session, as_of, body.author_id, "case_note_added",
-                     "finding", finding_id, {"preview": body.body[:80]})
+        append_event(session, as_of, actor.id, "case_note_added", "finding", finding_id,
+                     {"note_id": note.id})
         session.commit()
         session.refresh(note)
         return {"id": note.id, "author_id": note.author_id, "created_on": str(note.created_on), "body": note.body}
@@ -674,7 +747,7 @@ def add_case_note(finding_id: str, body: CaseNoteCreate):
 
 # ── Escalations ───────────────────────────────────────────────────────────────
 
-@app.get("/escalations")
+@router.get("/escalations")
 def list_escalations():
     with get_session() as session:
         escs = list(session.exec(
@@ -715,30 +788,46 @@ def list_escalations():
         return result
 
 
-@app.post("/escalations/{esc_id}/ack")
-def ack_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
+def _get_escalation(session, esc_id: int) -> Escalation:
+    esc = session.get(Escalation, esc_id)
+    if not esc:
+        raise HTTPException(404, f"Escalation {esc_id} not found")
+    return esc
+
+
+@router.post("/escalations/{esc_id}/ack")
+def ack_escalation_route(esc_id: int, actor_id: Optional[str] = None):
     with get_session() as session:
-        try:
-            esc = ack_escalation(session, esc_id, _actor(actor_id))
-            return {"id": esc.id, "status": str(esc.status)}
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+        esc = _get_escalation(session, esc_id)
+        role = str(esc.assigned_to_role).replace("_", " ")
+        actor = _require_role(session, actor_id, {esc.assigned_to_role},
+                              f"acknowledge this escalation (assigned to {role})")
+        if esc.status != EscalationStatus.OPEN:
+            raise HTTPException(400, f"Escalation is already {esc.status}")
+        esc = ack_escalation(session, esc_id, actor.id)
+        return {"id": esc.id, "status": str(esc.status)}
 
 
-@app.post("/escalations/{esc_id}/resolve")
-def resolve_escalation_route(esc_id: int, actor_id: str = "P-PRIYA"):
+@router.post("/escalations/{esc_id}/resolve")
+def resolve_escalation_route(esc_id: int, actor_id: Optional[str] = None):
     with get_session() as session:
-        try:
-            esc = resolve_escalation(session, esc_id, _actor(actor_id))
-            return {"id": esc.id, "status": str(esc.status)}
-        except ValueError as e:
-            raise HTTPException(404, str(e))
+        esc = _get_escalation(session, esc_id)
+        actor = _require_role(session, actor_id, {esc.assigned_to_role}, "resolve this escalation")
+        esc = resolve_escalation(session, esc_id, actor.id)
+        return {"id": esc.id, "status": str(esc.status)}
 
 
-@app.post("/escalations/{esc_id}/respond")
+@router.post("/escalations/{esc_id}/respond")
 def respond_escalation_route(esc_id: int, body: EscalationRespondBody,
-                              actor_id: str = "P-OKAFOR"):
+                              actor_id: Optional[str] = None):
     with get_session() as session:
+        esc = _get_escalation(session, esc_id)
+        actor = _require_role(session, actor_id, RESPOND_ROLES, "record a formal committee response")
+        if esc.level != 3:
+            raise HTTPException(400, "Formal responses are only for L3 escalations")
+        if esc.status not in (EscalationStatus.OPEN, EscalationStatus.ACK):
+            raise HTTPException(400, f"Escalation is already {esc.status}")
+        actor_id = actor.id
         try:
             due = date.fromisoformat(body.due_on) if body.due_on else None
             resp = respond_escalation(session, esc_id, _actor(actor_id),
@@ -783,7 +872,7 @@ def _generate_negative_citation(session, sccversion_id: str, as_of: date, issued
 
 # ── Citations ─────────────────────────────────────────────────────────────────
 
-@app.get("/citations")
+@router.get("/citations")
 def list_citations():
     with get_session() as session:
         cits = list(session.exec(select(IssuedCitation)).all())
@@ -796,7 +885,7 @@ def list_citations():
                 for c in cits]
 
 
-@app.post("/citations/generate")
+@router.post("/citations/generate")
 def generate_citation(body: CitationGenerateBody):
     with get_session() as session:
         sv = session.get(SCCVersion, body.sccversion_id)
@@ -837,7 +926,7 @@ def generate_citation(body: CitationGenerateBody):
                 "target_met": met, "record_hash": record_hash}
 
 
-@app.post("/resolve")
+@router.post("/resolve")
 def resolve_citation(body: ResolveBody):
     with get_session() as session:
         if body.citation_string:
@@ -904,7 +993,7 @@ def _parse_citation_string(s: str):
 
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
-@app.get("/audit")
+@router.get("/audit")
 def list_audit(limit: int = 500, action: Optional[str] = None, actor_id: Optional[str] = None):
     with get_session() as session:
         q = select(AuditEvent).order_by(AuditEvent.seq.desc())  # type: ignore[attr-defined]
@@ -924,7 +1013,7 @@ def list_audit(limit: int = 500, action: Optional[str] = None, actor_id: Optiona
                 for e in events]
 
 
-@app.get("/audit/verify")
+@router.get("/audit/verify")
 def verify_audit():
     with get_session() as session:
         ok, msg = verify_chain(session)
@@ -933,14 +1022,14 @@ def verify_audit():
 
 # ── Checkpoints ───────────────────────────────────────────────────────────────
 
-@app.get("/checkpoints")
+@router.get("/checkpoints")
 def list_checkpoints():
     with get_session() as session:
         applied = {r.cp_id for r in session.exec(select(CheckpointApplied)).all()}
         return {"available": list(CHECKPOINTS.keys()), "applied": list(applied)}
 
 
-@app.post("/checkpoints/{cp_id}/apply")
+@router.post("/checkpoints/{cp_id}/apply")
 def apply_checkpoint_route(cp_id: str):
     with get_session() as session:
         if cp_id not in CHECKPOINTS:
@@ -951,7 +1040,7 @@ def apply_checkpoint_route(cp_id: str):
 
 # ── Reset ─────────────────────────────────────────────────────────────────────
 
-@app.post("/reset")
+@router.post("/reset")
 def reset_db():
     from db import engine
     from sqlmodel import SQLModel
@@ -960,12 +1049,13 @@ def reset_db():
     generate_snapshots()
     seed_db()
     apply_all_checkpoints()
+    patch_case_statuses()
     return {"status": "reset"}
 
 
 # ── SLA ───────────────────────────────────────────────────────────────────────
 
-@app.get("/sccs/{scc_id}/versions/{version_id}/sla")
+@router.get("/sccs/{scc_id}/versions/{version_id}/sla")
 def get_scc_sla(scc_id: str, version_id: str,
                 period_from: Optional[str] = None, period_to: Optional[str] = None):
     with get_session() as session:
@@ -987,3 +1077,23 @@ def get_scc_sla(scc_id: str, version_id: str,
             "active_days": days, "target_met": met,
             "target_uptime_pct": sv.target_uptime_pct,
         }
+
+
+# ── Mount API + serve frontend SPA ────────────────────────────────────────────
+
+app.include_router(router, prefix="/api")
+
+DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str):
+    if full_path.startswith("api/"):
+        return JSONResponse({"detail": "Not Found"}, status_code=404)
+    if DIST_DIR.is_dir():
+        candidate = DIST_DIR / full_path
+        if full_path and candidate.is_file():
+            return FileResponse(candidate)
+        return FileResponse(DIST_DIR / "index.html")
+    return JSONResponse({"detail": "Frontend not built — run `npm run build` in frontend/"},
+                        status_code=404)

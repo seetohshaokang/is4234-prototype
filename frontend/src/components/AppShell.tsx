@@ -11,6 +11,7 @@ import { useAppStore } from "../store/useAppStore";
 import { cn } from "../lib/utils";
 import { startTour } from "../lib/tour";
 import DemoCoach from "./DemoCoach";
+import { DEMO_STEPS } from "../lib/demoScript";
 
 interface Persona { id: string; name: string; role: string; title: string; }
 
@@ -24,7 +25,7 @@ const NAV_INTERNAL = [
   { to: "/checks",      icon: FlaskConical,    label: "Security Checks",  roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"] },
   { to: "/findings",    icon: AlertTriangle,   label: "Cases",            roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
-  { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: ["security_lead", "disclosure_committee", "audit_committee"] },
+  { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
   { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: null },
 ];
 
@@ -53,7 +54,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
   );
   const [coachStep, setCoachStep] = useState<number | null>(() => {
     const saved = localStorage.getItem(COACH_KEY);
-    return saved !== null ? Number(saved) : null;
+    if (saved === null) return null;
+    const i = Number(saved);
+    return i >= 0 && i < DEMO_STEPS.length ? i : null;
   });
   const navigate = useNavigate();
 

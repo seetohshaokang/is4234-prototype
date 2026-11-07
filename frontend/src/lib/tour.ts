@@ -64,7 +64,7 @@ const steps: DriveStep[] = [
     element: 'a[href="/escalations"]',
     popover: {
       title: "Escalations",
-      description: "Unresolved findings escalate automatically over time — L1 (control owner) → L2 (security lead) → L3 (disclosure committee). Click 'View case →' to open the case panel and acknowledge or add notes.",
+      description: "Cases climb L1 (control owner) → L2 (security lead) → L3 (disclosure committee). You can only Ack escalations assigned to your current role; at L3 the committee records a formal decision.",
       side: "right",
     },
   },

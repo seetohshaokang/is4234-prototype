@@ -371,6 +371,19 @@ def escalate_case(session: Session, finding_id: str, level: int, actor_id: str) 
         required_role = ESCALATE_TO_LEVEL_ALLOWED[level]
         if not actor or actor.role != required_role:
             raise ValueError(f"Only {required_role.replace('_', ' ')} can escalate to L{level}")
+    # Supersede prior live demands — a case holds one open escalation at a
+    # time; the closed list records the climb.
+    for prev in session.exec(
+        select(Escalation).where(
+            Escalation.finding_id == finding_id,
+            Escalation.status.in_([EscalationStatus.OPEN, EscalationStatus.ACK]),  # type: ignore[attr-defined]
+        )
+    ).all():
+        prev.status = EscalationStatus.RESOLVED
+        prev.resolved_on = as_of
+        session.add(prev)
+        append_event(session, as_of, actor_id, "escalation_resolved", "escalation",
+                     str(prev.id), {"finding_id": finding_id, "reason": "superseded"})
     esc = Escalation(
         finding_id=finding_id,
         level=level,

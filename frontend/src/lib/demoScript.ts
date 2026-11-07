@@ -1,3 +1,19 @@
+/**
+ * Guided demo script — a step-by-step walkthrough of the SCC Library app.
+ *
+ * Entering a step navigates the app to the page it describes (`nav`), so the
+ * user is always looking at the screen being explained. The seeded world is a
+ * finished timeline (sim date 2020-12-14): SCC-07 is DOWN right now — the one
+ * live failure to explore — with its case open on the Cases page.
+ *
+ * Fields:
+ *   nav      — route the app jumps to when this step opens
+ *   story    — what you're looking at
+ *   gate     — what you can change on this screen
+ *   tries    — suggested exercises (nav jumps within the step's section)
+ *   takeaway — why this piece exists
+ */
+
 export interface DemoTry {
   label: string;
   nav?: string;
@@ -5,6 +21,7 @@ export interface DemoTry {
 
 export interface DemoStep {
   cp?: string;
+  nav?: string;
   title: string;
   date: string;
   story: string;
@@ -15,8 +32,9 @@ export interface DemoStep {
 
 export const DEMO_STEPS: DemoStep[] = [
   {
-    title: "Welcome — how this works",
-    date: "Before the story",
+    title: "How to use this guide",
+    date: "Intro",
+    nav: "/sccs",
     story:
       "This guided demo walks the SolarWinds case study checkpoint by checkpoint — from December 2017 (the first security claims are drafted) to December 2020 (the breach becomes public). At each stop you'll see what happened, what the SCC Library recorded, and things to explore.",
     gate:

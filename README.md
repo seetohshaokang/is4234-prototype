@@ -30,6 +30,11 @@ make frontend       # run Vite dev on :5173
 
 Open http://localhost:5173 in your browser.
 
+**New here?** The app offers a guided tour on first launch (replayable via the
+"How to use this app" button in the sidebar). For the full playbook — injectable
+variables, expected outcomes, and a manual verification checklist — see
+[DEMO-GUIDE.md](DEMO-GUIDE.md).
+
 ## Roles (use the sidebar switcher)
 
 | Person | Role | Purpose |

@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: scc-library
+    runtime: docker
+    plan: free
+    # no healthCheckPath — TCP port check only, so the instance is healthy
+    # as soon as uvicorn binds (seeding happens in the background)
+    autoDeploy: true

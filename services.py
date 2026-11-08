@@ -1,4 +1,4 @@
-"""Orchestration layer: coordinates DB, engines, and audit log."""
+"""Orchestration layer: coordinates DB, engine, and audit log."""
 
 import json
 from datetime import date, timedelta
@@ -7,18 +7,20 @@ from pathlib import Path
 from sqlmodel import Session, select
 
 from db import (
-    get_session, SimClock, Claim, ClaimStatus, SupportState,
-    Control, ClaimControlMap, ControlTest, TestResult, TestOutcome,
+    get_session, SimClock,
+    CheckDefinition, Collector, CollectorStatus,
+    Control, SCC, SCCVersion, SCCVersionStatus, SCCVersionControl, EvidenceType,
+    TestResult, TestOutcome,
     Finding, FindingSeverity, FindingStatus,
-    RiskAcceptance, RiskAcceptanceStatus,
-    GateDecision, GateVerdict, GateTrigger,
-    Override, OverrideStatus,
+    StateInterval, SCCState,
     Escalation, EscalationStatus,
-    ManualEvidence, AuditEvent, CheckpointApplied, Person,
+    CommitteeResponse, CommitteeDecision,
+    ChangeRequest, ChangeRequestType, ChangeRequestStatus,
+    IssuedCitation,
+    ManualEvidence, AuditEvent, CheckpointApplied, Person, Role,
 )
-from engine.control_tests import run_test
-from engine.gate import evaluate
-from engine.escalation import compute_new_escalations
+from engine.collectors import get_raw_data
+from engine.checks import run_check, infer_severity
 from audit import append_event
 
 SNAP_DIR = Path("data/snapshots")
@@ -48,385 +50,356 @@ def set_clock(session: Session, new_date: date, actor_id: str = "SYSTEM") -> dat
 
 def advance_clock(session: Session, days: int, actor_id: str = "SYSTEM") -> date:
     current = get_clock(session)
-    return set_clock(session, current + timedelta(days=days), actor_id)
+    new_date = current + timedelta(days=days)
+    return _advance_to(session, new_date, actor_id)
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+def _advance_to(session: Session, new_date: date, actor_id: str = "SYSTEM") -> date:
+    set_clock(session, new_date, actor_id)
+    check_pending_deprecations(session, new_date, actor_id)
+    run_due_checks(session, new_date, actor_id)
+    rebuild_all_intervals(session, new_date)
+    return new_date
 
-def run_all_tests(session: Session, actor_id: str = "SYSTEM") -> list[TestResult]:
-    as_of = get_clock(session)
-    as_of_str = str(as_of)
+
+# ── Check runs ────────────────────────────────────────────────────────────────
+
+def _latest_collector(session: Session, check_id: str, as_of: date) -> Collector | None:
+    cols = list(session.exec(
+        select(Collector).where(Collector.check_id == check_id)
+    ).all())
+    approved = [c for c in cols if c.status == CollectorStatus.APPROVED
+                and c.approved_on and c.approved_on <= as_of]
+    return max(approved, key=lambda c: c.approved_on) if approved else None
+
+
+def _get_check_def(session: Session, check_id: str, check_version: str) -> CheckDefinition | None:
+    return session.get(CheckDefinition, (check_id, check_version))
+
+
+def _last_run_date(session: Session, control_id: str) -> date | None:
+    r = session.exec(
+        select(TestResult).where(TestResult.control_id == control_id)
+        .order_by(TestResult.run_on.desc())  # type: ignore[attr-defined]
+    ).first()
+    return r.run_on if r else None
+
+
+def run_due_checks(session: Session, as_of: date, actor_id: str = "SYSTEM") -> list[TestResult]:
+    """Run every scheduled check for every control up to as_of, in chronological order."""
     controls = list(session.exec(select(Control)).all())
-    tests = {t.id: t for t in session.exec(select(ControlTest)).all()}
-    results = []
+    all_results = []
 
+    # Collect (control, run_date) pairs across all controls, then sort
+    runs: list[tuple[Control, date]] = []
     for ctl in controls:
-        if not ctl.test_id or ctl.test_id not in tests:
+        if not ctl.check_id:
             continue
-        test = tests[ctl.test_id]
-        params = json.loads(test.parameters) if test.parameters else None
-        outcome = run_test(ctl.test_id, SNAP_DIR, as_of_str, params)
-        if outcome.outcome == "ERROR":
-            continue  # no snapshot available yet — don't write a result, so R1 fires
+        # Find the check definition (use latest version pinned by any active SCC)
+        check_version = _pinned_check_version(session, ctl.id) or "1"
+        check_def = _get_check_def(session, ctl.check_id, check_version)
+        if not check_def:
+            continue
 
-        snap_dates = sorted([d.name for d in SNAP_DIR.iterdir() if d.is_dir() and d.name <= as_of_str])
-        snap_date = snap_dates[-1] if snap_dates else as_of_str
+        freq = check_def.test_frequency_days
+        last_run = _last_run_date(session, ctl.id)
 
-        result = TestResult(
-            control_id=ctl.id,
-            test_id=ctl.test_id,
-            run_on=as_of,
-            snapshot_date=snap_date,
-            outcome=TestOutcome(outcome.outcome),
-            metrics=json.dumps(outcome.metrics),
-            evidence_summary=outcome.evidence_summary,
-        )
-        session.add(result)
-        session.flush()
-        results.append(result)
+        # First run: start from the date the first active SCC version using this control became active
+        first_active = _first_active_date(session, ctl.id)
+        if first_active is None:
+            continue
 
-        append_event(session, as_of, actor_id, "test_run", "test_result", str(result.id),
-                     {"control_id": ctl.id, "test_id": ctl.test_id, "outcome": outcome.outcome})
+        next_run = (last_run + timedelta(days=freq)) if last_run else first_active
+        while next_run <= as_of:
+            runs.append((ctl, next_run))
+            next_run += timedelta(days=freq)
 
-        # Auto-open finding on FAIL if none already open for this control+test
-        if outcome.outcome == "FAIL":
-            existing = session.exec(
-                select(Finding).where(
-                    Finding.control_id == ctl.id,
-                    Finding.status == FindingStatus.OPEN,
-                )
-            ).first()
-            if not existing:
-                _auto_open_finding(session, ctl, outcome, as_of, actor_id)
+    runs.sort(key=lambda x: x[1])
 
-    session.commit()
-    _run_escalation_ageing(session, as_of, actor_id)
-    return results
+    for ctl, run_date in runs:
+        check_version = _pinned_check_version(session, ctl.id) or "1"
+        result = _run_single_check(session, ctl, check_version, run_date, actor_id)
+        if result:
+            all_results.append(result)
+
+    if all_results:
+        session.commit()
+    return all_results
 
 
-def _auto_open_finding(session: Session, ctl: Control, outcome, as_of: date, actor_id: str) -> Finding:
-    sev_map = {"LOW": FindingSeverity.LOW, "MEDIUM": FindingSeverity.MEDIUM,
-               "HIGH": FindingSeverity.HIGH, "CRITICAL": FindingSeverity.CRITICAL}
-    count = len(list(session.exec(select(Finding)).all())) + 1
-    fid = f"F-{as_of.year}-{count:03d}"
+def _first_active_date(session: Session, control_id: str) -> date | None:
+    """Return the earliest active_from across all SCC versions that pin this control."""
+    maps = list(session.exec(
+        select(SCCVersionControl).where(SCCVersionControl.control_id == control_id)
+    ).all())
+    dates = []
+    for m in maps:
+        sv = session.get(SCCVersion, m.sccversion_id)
+        if sv and sv.status in (SCCVersionStatus.ACTIVE, SCCVersionStatus.SUPERSEDED, SCCVersionStatus.DEPRECATED) and sv.active_from:
+            dates.append(sv.active_from)
+    return min(dates) if dates else None
+
+
+def _pinned_check_version(session: Session, control_id: str) -> str | None:
+    """Return the check_version pinned by the most recent active SCC version for this control."""
+    maps = list(session.exec(
+        select(SCCVersionControl).where(SCCVersionControl.control_id == control_id)
+    ).all())
+    best_version = None
+    best_from = None
+    for m in maps:
+        sv = session.get(SCCVersion, m.sccversion_id)
+        if sv and sv.status == SCCVersionStatus.ACTIVE and sv.active_from:
+            if best_from is None or sv.active_from > best_from:
+                best_from = sv.active_from
+                best_version = m.check_version
+    return best_version
+
+
+def _run_single_check(session: Session, ctl: Control, check_version: str,
+                      run_date: date, actor_id: str) -> TestResult | None:
+    collector = _latest_collector(session, ctl.check_id, run_date)
+    collector_approved = collector is not None and collector.status == CollectorStatus.APPROVED
+
+    # If no approved collector exists at run time, skip (SCC will be UNKNOWN)
+    # We still record the attempt so the interval engine knows there was no valid evidence
+    if not collector_approved:
+        return None
+
+    check_def = _get_check_def(session, ctl.check_id, check_version)
+    params = json.loads(check_def.params) if check_def and check_def.params else {}
+
+    raw = get_raw_data(ctl.check_id, run_date)
+    outcome_str, measured, summary = run_check(ctl.check_id, check_version, raw, params, as_of=run_date)
+
+    snap_dirs = sorted([d.name for d in SNAP_DIR.iterdir() if d.is_dir() and d.name <= str(run_date)])
+    snap_date = snap_dirs[-1] if snap_dirs else str(run_date)
+
+    result = TestResult(
+        control_id=ctl.id,
+        check_id=ctl.check_id,
+        check_version=check_version,
+        collector_id=collector.id,
+        collector_approved_at_run=True,
+        run_on=run_date,
+        snapshot_date=snap_date,
+        outcome=TestOutcome(outcome_str),
+        measured_value=json.dumps(measured) if measured is not None else None,
+        evidence_summary=summary,
+    )
+    session.add(result)
+    session.flush()
+
+    append_event(session, run_date, actor_id, "check_run", "testresult", str(result.id),
+                 {"control_id": ctl.id, "check_id": ctl.check_id,
+                  "check_version": check_version, "outcome": outcome_str})
+
+    # Auto-open finding on FAIL if no open finding for this control
+    if outcome_str == "FAIL":
+        existing = session.exec(
+            select(Finding).where(
+                Finding.control_id == ctl.id,
+                Finding.status == FindingStatus.OPEN,
+            )
+        ).first()
+        if not existing:
+            _auto_open_finding(session, ctl, outcome_str, measured, summary, run_date, actor_id)
+
+    # Auto-close open finding on PASS
+    elif outcome_str == "PASS":
+        open_finding = session.exec(
+            select(Finding).where(
+                Finding.control_id == ctl.id,
+                Finding.status == FindingStatus.OPEN,
+            )
+        ).first()
+        if open_finding:
+            open_finding.status = FindingStatus.CLOSED
+            open_finding.closed_on = run_date
+            session.add(open_finding)
+            append_event(session, run_date, "SYSTEM", "finding_closed", "finding",
+                         open_finding.id, {"reason": "check_passed"})
+
+    return result
+
+
+def _auto_open_finding(session: Session, ctl: Control, outcome: str, measured,
+                       summary: str, as_of: date, actor_id: str) -> Finding:
+    sev = infer_severity(ctl.check_id, _pinned_check_version(session, ctl.id) or "1",
+                         outcome, measured if isinstance(measured, dict) else {})
+    count = session.exec(select(Finding)).all()
+    fid = f"CASE_{as_of.year}_{len(list(count)) + 1:03d}"
     f = Finding(
         id=fid,
         control_id=ctl.id,
-        title=f"Automated test failure: {ctl.name}",
-        description=outcome.evidence_summary,
-        severity=sev_map.get(outcome.severity, FindingSeverity.HIGH),
-        source="automated_test",
-        raised_by_id=actor_id if actor_id != "SYSTEM" else "P-PRIYA",
-        owner_id=ctl.owner_id,
+        severity=FindingSeverity(sev),
+        status=FindingStatus.OPEN,
         opened_on=as_of,
-        due_on=as_of + timedelta(days=30),
+        source="automated_check",
+        title=f"Check failure: {ctl.name}",
+        description=summary,
     )
     session.add(f)
     session.flush()
     append_event(session, as_of, actor_id, "finding_opened", "finding", fid,
-                 {"control_id": ctl.id, "severity": outcome.severity, "auto": True})
+                 {"control_id": ctl.id, "severity": sev, "auto": True})
     return f
 
 
-# ── Gate ──────────────────────────────────────────────────────────────────────
+# ── SCC state intervals ───────────────────────────────────────────────────────
 
-def evaluate_all_claims(session: Session, trigger: GateTrigger,
-                        actor_id: str = "SYSTEM") -> list[GateDecision]:
-    as_of = get_clock(session)
-    claims = list(session.exec(select(Claim)).all())
-    decisions = []
-    for claim in claims:
-        d = evaluate_claim(session, claim.id, trigger, actor_id, as_of)
-        decisions.append(d)
-    session.commit()
-    return decisions
-
-
-def evaluate_claim(session: Session, claim_id: str, trigger: GateTrigger,
-                   actor_id: str = "SYSTEM", as_of: date | None = None) -> GateDecision:
-    if as_of is None:
-        as_of = get_clock(session)
-
-    claim = session.get(Claim, claim_id)
-    if not claim:
-        raise ValueError(f"Claim {claim_id} not found")
-
-    mappings = list(session.exec(
-        select(ClaimControlMap).where(ClaimControlMap.claim_id == claim_id)
+def rebuild_all_intervals(session: Session, as_of: date) -> None:
+    from engine.scc_state import compute_intervals as _compute
+    scc_versions = list(session.exec(
+        select(SCCVersion).where(SCCVersion.status.in_([  # type: ignore[attr-defined]
+            SCCVersionStatus.ACTIVE, SCCVersionStatus.SUPERSEDED, SCCVersionStatus.DEPRECATED
+        ]))
     ).all())
-    control_ids = [m.control_id for m in mappings]
-    controls = [session.get(Control, cid) for cid in control_ids if session.get(Control, cid)]
+    for sv in scc_versions:
+        _rebuild_intervals_for_version(session, sv, as_of, _compute)
+    session.commit()
 
-    # Latest result per control
-    latest_results = {}
-    for cid in control_ids:
-        result = session.exec(
-            select(TestResult)
-            .where(TestResult.control_id == cid, TestResult.run_on <= as_of)
-            .order_by(TestResult.run_on.desc())  # type: ignore[attr-defined]
-        ).first()
-        if result:
-            latest_results[cid] = {
-                "id": result.id, "run_on": result.run_on,
-                "outcome": result.outcome, "evidence_summary": result.evidence_summary,
-            }
 
-    open_findings = [
-        {"id": f.id, "control_id": f.control_id, "severity": f.severity,
-         "status": f.status, "opened_on": f.opened_on}
-        for f in session.exec(
-            select(Finding).where(
-                Finding.control_id.in_(control_ids),  # type: ignore[attr-defined]
-                Finding.status.in_([FindingStatus.OPEN, FindingStatus.RISK_ACCEPTED]),  # type: ignore[attr-defined]
-            )
-        ).all()
-    ]
+def _rebuild_intervals_for_version(session: Session, sv: SCCVersion, as_of: date, compute_fn) -> None:
+    maps = list(session.exec(
+        select(SCCVersionControl).where(SCCVersionControl.sccversion_id == sv.id)
+    ).all())
 
-    finding_ids = [f["id"] for f in open_findings]
-    risk_acceptances = [
-        {"id": r.id, "finding_id": r.finding_id, "status": r.status,
-         "expires_on": r.expires_on, "approved_by": r.approved_by}
-        for r in session.exec(
-            select(RiskAcceptance).where(RiskAcceptance.finding_id.in_(finding_ids))  # type: ignore[attr-defined]
-        ).all()
-    ] if finding_ids else []
-
-    active_overrides = [
-        {"id": o.id, "by_id": o.by_id, "reason": o.reason,
-         "expires_on": o.expires_on, "status": o.status}
-        for o in session.exec(
-            select(Override).where(Override.claim_id == claim_id,
-                                   Override.status == OverrideStatus.ACTIVE)
-        ).all()
-    ]
+    controls = []
+    results_by_control = {}
+    for m in maps:
+        ctl = session.get(Control, m.control_id)
+        if not ctl:
+            continue
+        controls.append({"id": ctl.id, "check_id": ctl.check_id,
+                         "check_version": m.check_version,
+                         "test_frequency_days": _get_check_def(session, ctl.check_id, m.check_version).test_frequency_days
+                         if _get_check_def(session, ctl.check_id, m.check_version) else 30})
+        results_by_control[ctl.id] = [
+            {"run_on": r.run_on, "outcome": r.outcome,
+             "collector_approved_at_run": r.collector_approved_at_run,
+             "check_version": r.check_version}
+            for r in session.exec(
+                select(TestResult).where(TestResult.control_id == ctl.id)
+                .order_by(TestResult.run_on)  # type: ignore[attr-defined]
+            ).all()
+        ]
 
     manual_ev = [
-        {"control_id": m.control_id, "valid_until": m.valid_until, "summary": m.summary}
-        for m in session.exec(
-            select(ManualEvidence).where(ManualEvidence.control_id.in_(control_ids))  # type: ignore[attr-defined]
+        {"control_id": m.control_id, "valid_from": me.valid_from, "valid_until": me.valid_until}
+        for m in maps
+        for me in session.exec(
+            select(ManualEvidence).where(ManualEvidence.control_id == m.control_id)
         ).all()
-    ] if control_ids else []
-
-    verdict, rules, missing = evaluate(
-        claim={"id": claim.id, "owner_id": claim.owner_id},
-        controls=[{"id": c.id, "test_frequency_days": c.test_frequency_days} for c in controls if c],
-        mappings=[{"claim_id": m.claim_id, "control_id": m.control_id, "approved_by": m.approved_by} for m in mappings],
-        latest_results=latest_results,
-        open_findings=open_findings,
-        risk_acceptances=risk_acceptances,
-        active_overrides=active_overrides,
-        manual_evidence=manual_ev,
-        as_of=as_of,
-    )
-
-    decision = GateDecision(
-        claim_id=claim_id,
-        evaluated_on=as_of,
-        trigger=trigger,
-        decision=GateVerdict(verdict),
-        rules_fired=json.dumps([{"rule_id": r.rule_id, "message": r.message,
-                                  "evidence_ids": r.evidence_ids} for r in rules]),
-        missing_evidence=json.dumps(missing),
-    )
-    session.add(decision)
-    session.flush()
-
-    # Update claim support state
-    state_map = {"APPROVE": SupportState.SUPPORTED, "ESCALATE": SupportState.AT_RISK,
-                 "BLOCK": SupportState.UNSUPPORTED}
-    if not mappings:
-        claim.support_state = SupportState.UNMAPPED
-    else:
-        claim.support_state = state_map[verdict]
-    session.add(claim)
-
-    # Drift rule: published claim just became BLOCK -> L3 escalation
-    if claim.status == ClaimStatus.PUBLISHED and verdict == "BLOCK":
-        _create_drift_escalation(session, claim_id, as_of, actor_id)
-
-    append_event(session, as_of, actor_id, "gate_evaluated", "gate_decision", str(decision.id),
-                 {"claim_id": claim_id, "verdict": verdict, "trigger": str(trigger)})
-    return decision
-
-
-def _create_drift_escalation(session: Session, claim_id: str, as_of: date, actor_id: str) -> None:
-    existing = session.exec(
-        select(Escalation).where(
-            Escalation.subject_id == claim_id,
-            Escalation.subject_type == "claim",
-            Escalation.level == 3,
-            Escalation.status.in_([EscalationStatus.OPEN, EscalationStatus.ACK]),  # type: ignore[attr-defined]
-        )
-    ).first()
-    if existing:
-        return
-    esc = Escalation(
-        subject_type="claim", subject_id=claim_id, level=3,
-        assigned_to_role="disclosure_committee", assigned_to_id="P-OKAFOR",
-        reason=f"Published claim {claim_id} no longer supported by evidence.",
-        created_on=as_of, status=EscalationStatus.OPEN,
-    )
-    session.add(esc)
-    session.flush()
-    append_event(session, as_of, actor_id, "escalation_created", "escalation", str(esc.id),
-                 {"claim_id": claim_id, "level": 3, "reason": "drift"})
-
-
-# ── Escalation ageing ────────────────────────────────────────────────────────
-
-def _run_escalation_ageing(session: Session, as_of: date, actor_id: str) -> None:
-    findings = [
-        {"id": f.id, "control_id": f.control_id, "severity": f.severity,
-         "status": f.status, "opened_on": f.opened_on,
-         "owner_id": f.owner_id, "raised_by_id": f.raised_by_id}
-        for f in session.exec(select(Finding).where(Finding.status == FindingStatus.OPEN)).all()
     ]
 
-    # Which controls back published claims
-    published_claim_controls: set[str] = set()
-    claim_by_control: dict[str, dict] = {}
-    for claim in session.exec(select(Claim).where(Claim.status == ClaimStatus.PUBLISHED)).all():
-        for m in session.exec(select(ClaimControlMap).where(ClaimControlMap.claim_id == claim.id)).all():
-            published_claim_controls.add(m.control_id)
-            claim_by_control[m.control_id] = {"id": claim.id, "owner_id": claim.owner_id}
+    # Pending collector check (current status at as_of)
+    pending_check_ids = set()
+    for m in maps:
+        ctl = session.get(Control, m.control_id)
+        if not ctl:
+            continue
+        latest_col = _latest_collector(session, ctl.check_id, as_of)
+        # Check if there's a newer PENDING collector after the last APPROVED one
+        all_cols = list(session.exec(
+            select(Collector).where(Collector.check_id == ctl.check_id)
+        ).all())
+        pending = [c for c in all_cols if c.status == CollectorStatus.PENDING]
+        if pending:
+            pending_check_ids.add(ctl.check_id)
 
-    existing_escs = [
-        {"id": e.id, "subject_type": e.subject_type, "subject_id": e.subject_id,
-         "level": e.level, "status": e.status, "created_on": e.created_on,
-         "acknowledged_on": e.acknowledged_on}
-        for e in session.exec(select(Escalation)).all()
-    ]
-    people = [{"id": p.id, "role": p.role} for p in session.exec(select(Person)).all()]
+    sv_dict = {
+        "id": sv.id, "active_from": sv.active_from, "active_to": sv.active_to,
+        "evidence_type": sv.evidence_type,
+    }
 
-    new_escs = compute_new_escalations(
-        findings=findings,
-        published_claim_control_ids=published_claim_controls,
-        claim_by_control=claim_by_control,
-        existing_escalations=existing_escs,
-        people=people,
-        as_of=as_of,
-    )
+    new_intervals = compute_fn(sv_dict, controls, results_by_control,
+                               manual_ev, pending_check_ids, as_of)
 
-    for esc_data in new_escs:
-        supersedes = esc_data.pop("_supersedes", None)
-        esc = Escalation(**{k: v for k, v in esc_data.items()
-                           if k in Escalation.model_fields})
-        session.add(esc)
-        session.flush()
-        if supersedes:
-            old = session.get(Escalation, supersedes)
-            if old:
-                old.status = EscalationStatus.SUPERSEDED
-                session.add(old)
-        append_event(session, as_of, actor_id, "escalation_created", "escalation", str(esc.id),
-                     {"subject_id": esc.subject_id, "level": esc.level, "reason": esc.reason[:80]})
-    session.commit()
-
-
-# ── Findings ──────────────────────────────────────────────────────────────────
-
-def create_finding(session: Session, control_id: str, title: str, description: str,
-                   severity: str, raised_by_id: str, owner_id: str,
-                   source: str = "manual_review") -> Finding:
-    as_of = get_clock(session)
-    count = len(list(session.exec(select(Finding)).all())) + 1
-    fid = f"F-{as_of.year}-{count:03d}"
-    f = Finding(
-        id=fid, control_id=control_id, title=title, description=description,
-        severity=FindingSeverity(severity), source=source,
-        raised_by_id=raised_by_id, owner_id=owner_id,
-        opened_on=as_of, due_on=as_of + timedelta(days=30),
-    )
-    session.add(f)
+    # Delete old intervals and replace
+    old = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == sv.id)
+    ).all())
+    for o in old:
+        session.delete(o)
     session.flush()
-    append_event(session, as_of, raised_by_id, "finding_opened", "finding", fid,
-                 {"control_id": control_id, "severity": severity})
-    session.commit()
-    return f
+
+    for iv in new_intervals:
+        session.add(StateInterval(
+            sccversion_id=sv.id,
+            state=SCCState(iv["state"]),
+            start=iv["start"],
+            end=iv.get("end"),
+            detected_at=iv.get("detected_at"),
+            possibly_since=iv.get("possibly_since"),
+            cause_note=iv.get("cause_note"),
+        ))
+    session.flush()
 
 
-def close_finding(session: Session, finding_id: str, actor_id: str) -> Finding:
+# ── Escalation engine ────────────────────────────────────────────────────────
+
+LEVEL_ROLES = {
+    1: Role.CONTROL_OWNER,
+    2: Role.SECURITY_LEAD,
+    3: Role.DISCLOSURE_COMMITTEE,
+}
+
+LEVEL_REASONS = {
+    1: "Case picked up — control owner begins remediation",
+    2: "Escalated to security lead for review",
+    3: "Escalated to disclosure committee for formal decision",
+}
+
+# Who is allowed to trigger the escalation TO each level
+ESCALATE_TO_LEVEL_ALLOWED = {
+    2: Role.CONTROL_OWNER,   # control owner escalates L1 → L2
+    3: Role.SECURITY_LEAD,   # security lead escalates L2 → L3
+}
+
+
+def escalate_case(session: Session, finding_id: str, level: int, actor_id: str) -> Escalation:
     as_of = get_clock(session)
     f = session.get(Finding, finding_id)
     if not f:
-        raise ValueError(f"Finding {finding_id} not found")
-    f.status = FindingStatus.CLOSED
-    f.closed_on = as_of
-    session.add(f)
-    append_event(session, as_of, actor_id, "finding_closed", "finding", finding_id, {})
-    session.commit()
-    evaluate_all_claims(session, GateTrigger.EVIDENCE_CHANGE, actor_id)
-    return f
-
-
-# ── Risk Acceptance ───────────────────────────────────────────────────────────
-
-def propose_risk_acceptance(session: Session, finding_id: str, proposed_by: str,
-                            rationale: str, cost_benefit_note: str,
-                            expires_on: date) -> RiskAcceptance:
-    as_of = get_clock(session)
-    # Check if finding's control backs a published claim
-    f = session.get(Finding, finding_id)
-    affects = False
-    if f:
-        published_ids = {c.claim_id for c in session.exec(
-            select(ClaimControlMap).where(ClaimControlMap.control_id == f.control_id)
-        ).all() if session.exec(
-            select(Claim).where(Claim.id == c.claim_id, Claim.status == ClaimStatus.PUBLISHED)
-        ).first()}
-        affects = bool(published_ids)
-
-    ra_id = f"RA-{as_of.year}-{finding_id}"
-    ra = RiskAcceptance(
-        id=ra_id, finding_id=finding_id, proposed_by=proposed_by,
-        rationale=rationale, cost_benefit_note=cost_benefit_note,
-        expires_on=expires_on, affects_public_claims=affects,
+        raise ValueError(f"Case {finding_id} not found")
+    if level not in LEVEL_ROLES:
+        raise ValueError("Level must be 1, 2, or 3")
+    # Enforce who can trigger manual escalations (L1 is auto, L2/L3 are role-gated)
+    if level in ESCALATE_TO_LEVEL_ALLOWED and actor_id != "SYSTEM":
+        actor = session.get(Person, actor_id)
+        required_role = ESCALATE_TO_LEVEL_ALLOWED[level]
+        if not actor or actor.role != required_role:
+            raise ValueError(f"Only {required_role.replace('_', ' ')} can escalate to L{level}")
+    # Supersede prior live demands — a case holds one open escalation at a
+    # time; the closed list records the climb.
+    for prev in session.exec(
+        select(Escalation).where(
+            Escalation.finding_id == finding_id,
+            Escalation.status.in_([EscalationStatus.OPEN, EscalationStatus.ACK]),  # type: ignore[attr-defined]
+        )
+    ).all():
+        prev.status = EscalationStatus.RESOLVED
+        prev.resolved_on = as_of
+        session.add(prev)
+        append_event(session, as_of, actor_id, "escalation_resolved", "escalation",
+                     str(prev.id), {"finding_id": finding_id, "reason": "superseded"})
+    esc = Escalation(
+        finding_id=finding_id,
+        level=level,
+        assigned_to_role=LEVEL_ROLES[level],
+        reason=LEVEL_REASONS[level],
+        created_on=as_of,
+        status=EscalationStatus.OPEN,
     )
-    session.add(ra)
+    session.add(esc)
+    f.level = level
+    session.add(f)
     session.flush()
-    append_event(session, as_of, proposed_by, "risk_acceptance_proposed", "risk_acceptance", ra_id,
-                 {"finding_id": finding_id, "affects_public_claims": affects})
+    append_event(session, as_of, actor_id, "escalation_created", "escalation",
+                 str(esc.id), {"finding_id": finding_id, "level": level})
     session.commit()
-    return ra
-
-
-def approve_risk_acceptance(session: Session, ra_id: str, approved_by: str) -> RiskAcceptance:
-    as_of = get_clock(session)
-    ra = session.get(RiskAcceptance, ra_id)
-    if not ra:
-        raise ValueError(f"Risk acceptance {ra_id} not found")
-    ra.status = RiskAcceptanceStatus.APPROVED
-    ra.approved_by = approved_by
-    # Update finding status
-    f = session.get(Finding, ra.finding_id)
-    if f:
-        f.status = FindingStatus.RISK_ACCEPTED
-        session.add(f)
-    session.add(ra)
-    append_event(session, as_of, approved_by, "risk_acceptance_approved", "risk_acceptance", ra_id,
-                 {"finding_id": ra.finding_id})
-    session.commit()
-    evaluate_all_claims(session, GateTrigger.EVIDENCE_CHANGE, approved_by)
-    return ra
-
-
-# ── Overrides ────────────────────────────────────────────────────────────────
-
-def create_override(session: Session, claim_id: str, by_id: str,
-                    reason: str, conditions: str, expires_on: date) -> Override:
-    if len(reason) < 50:
-        raise ValueError("Override reason must be at least 50 characters.")
-    as_of = get_clock(session)
-    ov_id = f"OV-{claim_id}-{as_of}"
-    ov = Override(id=ov_id, claim_id=claim_id, by_id=by_id, reason=reason,
-                  conditions=conditions, created_on=as_of, expires_on=expires_on)
-    session.add(ov)
-    session.flush()
-    append_event(session, as_of, by_id, "override_created", "override", ov_id,
-                 {"claim_id": claim_id, "expires_on": str(expires_on)})
-    session.commit()
-    evaluate_claim(session, claim_id, GateTrigger.EVIDENCE_CHANGE, by_id)
-    return ov
+    return esc
 
 
 # ── Escalation actions ────────────────────────────────────────────────────────
@@ -457,153 +430,701 @@ def resolve_escalation(session: Session, esc_id: int, actor_id: str) -> Escalati
     return esc
 
 
-# ── Claim publication ────────────────────────────────────────────────────────
-
-def publish_claim(session: Session, claim_id: str, actor_id: str) -> Claim:
+def respond_escalation(session: Session, esc_id: int, actor_id: str,
+                       decision: str, rationale: str, due_on: date | None = None) -> CommitteeResponse:
+    if len(rationale) < 50:
+        raise ValueError("Rationale must be at least 50 characters.")
     as_of = get_clock(session)
-    claim = session.get(Claim, claim_id)
-    if not claim:
-        raise ValueError(f"Claim {claim_id} not found")
+    esc = session.get(Escalation, esc_id)
+    if not esc:
+        raise ValueError(f"Escalation {esc_id} not found")
+    resp = CommitteeResponse(
+        escalation_id=esc_id,
+        decision=CommitteeDecision(decision),
+        rationale=rationale,
+        due_on=due_on,
+        decided_by=actor_id,
+        decided_on=as_of,
+    )
+    session.add(resp)
+    esc.status = EscalationStatus.RESOLVED
+    esc.resolved_on = as_of
+    session.add(esc)
+    session.flush()
+    append_event(session, as_of, actor_id, "committee_response", "escalation", str(esc_id),
+                 {"decision": decision, "finding_id": esc.finding_id})
+    session.commit()
+    return resp
 
-    # Evaluate first
-    d = evaluate_claim(session, claim_id, GateTrigger.PRE_PUBLICATION, actor_id)
 
-    # Can only publish if APPROVE, or BLOCK/ESCALATE with active override
-    has_override = session.exec(
-        select(Override).where(Override.claim_id == claim_id,
-                               Override.status == OverrideStatus.ACTIVE)
+# ── Change requests ───────────────────────────────────────────────────────────
+
+def create_change_request(session: Session, cr_type: str, scc_id: str,
+                          requested_by: str, reason: str,
+                          proposal: dict | None = None) -> ChangeRequest:
+    as_of = get_clock(session)
+    requester = session.get(Person, requested_by)
+    if not requester or requester.role != Role.SECURITY_LEAD:
+        raise ValueError("Only security_lead may submit change requests.")
+    count = len(list(session.exec(select(ChangeRequest)).all())) + 1
+    cr = ChangeRequest(
+        id=f"CR-{as_of.year}-{count:03d}",
+        type=ChangeRequestType(cr_type),
+        scc_id=scc_id,
+        requested_by=requested_by,
+        requested_on=as_of,
+        reason=reason,
+        proposal=json.dumps(proposal) if proposal else None,
+    )
+    session.add(cr)
+    session.flush()
+    append_event(session, as_of, requested_by, "change_request_submitted",
+                 "changerequest", cr.id, {"type": cr_type, "scc_id": scc_id})
+    session.commit()
+    return cr
+
+
+def approve_change_request(session: Session, cr_id: str, actor_id: str,
+                            auditor_note: str = "", **kwargs) -> ChangeRequest:
+    as_of = get_clock(session)
+    approver = session.get(Person, actor_id)
+    if not approver or approver.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may approve change requests.")
+    cr = session.get(ChangeRequest, cr_id)
+    if not cr:
+        raise ValueError(f"Change request {cr_id} not found")
+    cr.status = ChangeRequestStatus.APPROVED
+    cr.decided_by = actor_id
+    cr.decided_on = as_of
+    cr.auditor_note = auditor_note
+    session.add(cr)
+    session.flush()
+
+    if cr.type == ChangeRequestType.CREATE:
+        _apply_create(session, cr, as_of, actor_id, **kwargs)
+    elif cr.type == ChangeRequestType.REEVALUATE:
+        _apply_reevaluate(session, cr, as_of, actor_id, **kwargs)
+    elif cr.type == ChangeRequestType.DEPRECATE:
+        effective_on = kwargs.get("effective_on", as_of)
+        _apply_deprecate(session, cr, as_of, effective_on, actor_id)
+
+    append_event(session, as_of, actor_id, "change_request_approved",
+                 "changerequest", cr_id, {"type": cr.type, "scc_id": cr.scc_id})
+    session.commit()
+    return cr
+
+
+def reject_change_request(session: Session, cr_id: str, actor_id: str, auditor_note: str) -> ChangeRequest:
+    as_of = get_clock(session)
+    approver = session.get(Person, actor_id)
+    if not approver or approver.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may reject change requests.")
+    cr = session.get(ChangeRequest, cr_id)
+    if not cr:
+        raise ValueError(f"Change request {cr_id} not found")
+    cr.status = ChangeRequestStatus.REJECTED
+    cr.decided_by = actor_id
+    cr.decided_on = as_of
+    cr.auditor_note = auditor_note
+    if cr.type == ChangeRequestType.CREATE:
+        # Mark SCC version as REJECTED
+        sv = session.exec(
+            select(SCCVersion).where(SCCVersion.scc_id == cr.scc_id,
+                                     SCCVersion.status == SCCVersionStatus.PROPOSED)
+        ).first()
+        if sv:
+            sv.status = SCCVersionStatus.REJECTED
+            session.add(sv)
+    session.add(cr)
+    append_event(session, as_of, actor_id, "change_request_rejected",
+                 "changerequest", cr_id, {"scc_id": cr.scc_id, "note": auditor_note})
+    session.commit()
+    return cr
+
+
+def _apply_create(session: Session, cr: ChangeRequest, as_of: date, actor_id: str,
+                  assertion_text: str = "", target_uptime_pct: float = 99.0,
+                  rolling_window_days: int = 365, max_single_downtime_days: int = 7,
+                  evidence_type: str = "TESTED", pinned_controls: list[dict] | None = None,
+                  **_) -> None:
+    sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == cr.scc_id,
+                                 SCCVersion.status == SCCVersionStatus.PROPOSED)
     ).first()
-    if d.decision == GateVerdict.BLOCK and not has_override:
-        raise ValueError(f"Cannot publish: claim is BLOCKED with no active override.")
+    if not sv:
+        return
+    if assertion_text:
+        sv.assertion_text = assertion_text
+    sv.status = SCCVersionStatus.ACTIVE
+    sv.active_from = as_of
+    sv.target_uptime_pct = target_uptime_pct
+    sv.rolling_window_days = rolling_window_days
+    sv.max_single_downtime_days = max_single_downtime_days
+    sv.evidence_type = EvidenceType(evidence_type)
+    sv.approved_by = actor_id
+    session.add(sv)
+    session.flush()
 
-    claim.status = ClaimStatus.PUBLISHED
-    claim.published_on = as_of
-    session.add(claim)
-    append_event(session, as_of, actor_id, "claim_published", "claim", claim_id,
-                 {"decision": d.decision})
+    if pinned_controls:
+        for pc in pinned_controls:
+            session.add(SCCVersionControl(
+                sccversion_id=sv.id,
+                control_id=pc["control_id"],
+                check_id=pc["check_id"],
+                check_version=pc.get("check_version", "1"),
+            ))
+    session.flush()
+
+
+def _apply_reevaluate(session: Session, cr: ChangeRequest, as_of: date, actor_id: str,
+                      new_version_id: str = "", assertion_text: str = "",
+                      target_uptime_pct: float = 99.0, rolling_window_days: int = 365,
+                      max_single_downtime_days: int = 7, evidence_type: str = "TESTED",
+                      pinned_controls: list[dict] | None = None, **_) -> None:
+    # Freeze old version
+    old_sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == cr.scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not old_sv:
+        return
+
+    # Check if old version was DOWN at supersession
+    current_intervals = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == old_sv.id,
+                                    StateInterval.end == None)  # noqa: E711
+    ).all())
+    was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+
+    old_sv.status = SCCVersionStatus.SUPERSEDED
+    old_sv.active_to = as_of
+    old_sv.superseded_while_down = was_down
+    # Close any open state intervals
+    for i in current_intervals:
+        i.end = as_of
+        session.add(i)
+    session.add(old_sv)
+    session.flush()
+
+    # Create new version
+    new_v_num = old_sv.version + 1
+    new_id = new_version_id or f"{cr.scc_id}-v{new_v_num}"
+    new_sv = SCCVersion(
+        id=new_id,
+        scc_id=cr.scc_id,
+        version=new_v_num,
+        assertion_text=assertion_text or old_sv.assertion_text,
+        status=SCCVersionStatus.ACTIVE,
+        active_from=as_of,
+        target_uptime_pct=target_uptime_pct,
+        rolling_window_days=rolling_window_days,
+        max_single_downtime_days=max_single_downtime_days,
+        evidence_type=EvidenceType(evidence_type),
+        supersedes_version_id=old_sv.id,
+        approved_by=actor_id,
+        reason=cr.reason,
+    )
+    session.add(new_sv)
+    session.flush()
+
+    if pinned_controls:
+        for pc in pinned_controls:
+            session.add(SCCVersionControl(
+                sccversion_id=new_id,
+                control_id=pc["control_id"],
+                check_id=pc["check_id"],
+                check_version=pc.get("check_version", "1"),
+            ))
+    session.flush()
+
+
+def _apply_deprecate(session: Session, cr: ChangeRequest, as_of: date,
+                     effective_on: date, actor_id: str) -> None:
+    if effective_on < as_of:
+        raise ValueError("effective_on must be on or after decision date.")
+    sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == cr.scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not sv:
+        return
+    # Mark effective_on on the change request
+    cr.effective_on = effective_on
+    # If effective_on is today, deprecate now
+    if effective_on <= as_of:
+        current_intervals = list(session.exec(
+            select(StateInterval).where(StateInterval.sccversion_id == sv.id,
+                                        StateInterval.end == None)  # noqa: E711
+        ).all())
+        was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+        sv.status = SCCVersionStatus.DEPRECATED
+        sv.active_to = effective_on
+        sv.deprecated_while_down = was_down
+        for i in current_intervals:
+            i.end = effective_on
+            session.add(i)
+        session.add(sv)
+    # else: deprecation fires on the effective_on date during clock advance
+
+
+def check_pending_deprecations(session: Session, as_of: date, actor_id: str = "SYSTEM") -> None:
+    """Apply any DEPRECATE change requests whose effective_on has arrived."""
+    crs = list(session.exec(
+        select(ChangeRequest).where(
+            ChangeRequest.type == ChangeRequestType.DEPRECATE,
+            ChangeRequest.status == ChangeRequestStatus.APPROVED,
+            ChangeRequest.effective_on != None,  # noqa: E711
+        )
+    ).all())
+    for cr in crs:
+        if cr.effective_on and cr.effective_on <= as_of:
+            sv = session.exec(
+                select(SCCVersion).where(SCCVersion.scc_id == cr.scc_id,
+                                          SCCVersion.status == SCCVersionStatus.ACTIVE)
+            ).first()
+            if sv:
+                current_intervals = list(session.exec(
+                    select(StateInterval).where(StateInterval.sccversion_id == sv.id,
+                                                StateInterval.end == None)  # noqa: E711
+                ).all())
+                was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+                sv.status = SCCVersionStatus.DEPRECATED
+                sv.active_to = cr.effective_on
+                sv.deprecated_while_down = was_down
+                for i in current_intervals:
+                    i.end = cr.effective_on
+                    session.add(i)
+                session.add(sv)
+                append_event(session, as_of, actor_id, "scc_deprecated",
+                             "sccversion", sv.id, {"effective_on": str(cr.effective_on)})
     session.commit()
-    return claim
 
 
-def withdraw_claim(session: Session, claim_id: str, actor_id: str) -> Claim:
+# ── Collector approval ────────────────────────────────────────────────────────
+
+def approve_collector(session: Session, collector_id: str, actor_id: str) -> Collector:
     as_of = get_clock(session)
-    claim = session.get(Claim, claim_id)
-    if not claim:
-        raise ValueError(f"Claim {claim_id} not found")
-    claim.status = ClaimStatus.WITHDRAWN
-    session.add(claim)
-    append_event(session, as_of, actor_id, "claim_withdrawn", "claim", claim_id, {})
+    approver = session.get(Person, actor_id)
+    if not approver or approver.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may approve collectors.")
+    col = session.get(Collector, collector_id)
+    if not col:
+        raise ValueError(f"Collector {collector_id} not found")
+    col.status = CollectorStatus.APPROVED
+    col.approved_by = actor_id
+    col.approved_on = as_of
+    session.add(col)
+    append_event(session, as_of, actor_id, "collector_approved", "collector", collector_id, {})
     session.commit()
-    return claim
+    return col
+
+
+def submit_collector(session: Session, check_id: str, version: str, code_hash: str,
+                     actor_id: str) -> Collector:
+    as_of = get_clock(session)
+    col = Collector(
+        id=f"COL-{check_id}-{version}-{as_of}",
+        check_id=check_id,
+        version=version,
+        code_hash=code_hash,
+        written_by=actor_id,
+        submitted_on=as_of,
+        status=CollectorStatus.PENDING,
+    )
+    session.add(col)
+    session.flush()
+    append_event(session, as_of, actor_id, "collector_submitted", "collector", col.id,
+                 {"check_id": check_id, "version": version})
+    session.commit()
+    return col
+
+
+# ── Auditor SCC management ────────────────────────────────────────────────────
+
+def auditor_create_scc(session: Session, actor_id: str, scc_id: str, title: str,
+                       owner_id: str, assertion_text: str,
+                       target_uptime_pct: float = 99.0, rolling_window_days: int = 365,
+                       max_single_downtime_days: int = 7,
+                       evidence_type: str = "TESTED") -> SCC:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly create SCCs.")
+    if session.get(SCC, scc_id):
+        raise ValueError(f"SCC {scc_id} already exists.")
+    scc = SCC(id=scc_id, title=title, owner_id=owner_id)
+    session.add(scc)
+    sv = SCCVersion(
+        id=f"{scc_id}-v1",
+        scc_id=scc_id,
+        version=1,
+        assertion_text=assertion_text,
+        status=SCCVersionStatus.ACTIVE,
+        active_from=as_of,
+        target_uptime_pct=target_uptime_pct,
+        rolling_window_days=rolling_window_days,
+        max_single_downtime_days=max_single_downtime_days,
+        evidence_type=EvidenceType(evidence_type),
+        approved_by=actor_id,
+    )
+    session.add(sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_created", "scc", scc_id,
+                 {"title": title, "assertion_text": assertion_text})
+    session.commit()
+    return scc
+
+
+def auditor_revise_scc(session: Session, actor_id: str, scc_id: str,
+                       assertion_text: str, reason: str,
+                       target_uptime_pct: float = 99.0, rolling_window_days: int = 365,
+                       max_single_downtime_days: int = 7,
+                       evidence_type: str = "TESTED") -> SCCVersion:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly revise SCCs.")
+    old_sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not old_sv:
+        raise ValueError(f"No active version for SCC {scc_id}.")
+
+    current_intervals = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == old_sv.id,
+                                     StateInterval.end == None)  # noqa: E711
+    ).all())
+    was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+    old_sv.status = SCCVersionStatus.SUPERSEDED
+    old_sv.active_to = as_of
+    old_sv.superseded_while_down = was_down
+    for i in current_intervals:
+        i.end = as_of
+        session.add(i)
+    session.add(old_sv)
+    session.flush()
+
+    new_v_num = old_sv.version + 1
+    new_sv = SCCVersion(
+        id=f"{scc_id}-v{new_v_num}",
+        scc_id=scc_id,
+        version=new_v_num,
+        assertion_text=assertion_text,
+        status=SCCVersionStatus.ACTIVE,
+        active_from=as_of,
+        target_uptime_pct=target_uptime_pct,
+        rolling_window_days=rolling_window_days,
+        max_single_downtime_days=max_single_downtime_days,
+        evidence_type=EvidenceType(evidence_type),
+        supersedes_version_id=old_sv.id,
+        approved_by=actor_id,
+        reason=reason,
+    )
+    session.add(new_sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_revised", "sccversion", new_sv.id,
+                 {"scc_id": scc_id, "version": new_v_num, "reason": reason})
+    session.commit()
+    return new_sv
+
+
+def auditor_deprecate_scc(session: Session, actor_id: str, scc_id: str, reason: str) -> SCCVersion:
+    as_of = get_clock(session)
+    actor = session.get(Person, actor_id)
+    if not actor or actor.role != Role.INDEPENDENT_AUDITOR:
+        raise ValueError("Only independent_auditor may directly deprecate SCCs.")
+    sv = session.exec(
+        select(SCCVersion).where(SCCVersion.scc_id == scc_id,
+                                  SCCVersion.status == SCCVersionStatus.ACTIVE)
+    ).first()
+    if not sv:
+        raise ValueError(f"No active version for SCC {scc_id}.")
+    current_intervals = list(session.exec(
+        select(StateInterval).where(StateInterval.sccversion_id == sv.id,
+                                     StateInterval.end == None)  # noqa: E711
+    ).all())
+    was_down = any(i.state == SCCState.DOWN for i in current_intervals)
+    sv.status = SCCVersionStatus.DEPRECATED
+    sv.active_to = as_of
+    sv.deprecated_while_down = was_down
+    sv.reason = reason
+    for i in current_intervals:
+        i.end = as_of
+        session.add(i)
+    session.add(sv)
+    session.flush()
+    append_event(session, as_of, actor_id, "scc_deprecated", "sccversion", sv.id,
+                 {"scc_id": scc_id, "reason": reason, "effective_on": str(as_of)})
+    session.commit()
+    return sv
 
 
 # ── Checkpoints ───────────────────────────────────────────────────────────────
 
 def apply_checkpoint(session: Session, cp_id: str) -> None:
-    """Apply a scripted checkpoint. Idempotent — won't re-apply."""
     already = session.get(CheckpointApplied, cp_id)
     if already:
         return
-
     as_of = get_clock(session)
     CHECKPOINTS[cp_id](session, as_of)
-
-    session.add(CheckpointApplied(cp_id=cp_id, applied_on=as_of))
-    append_event(session, as_of, "SYSTEM", "checkpoint_applied", "checkpoint", cp_id, {})
+    session.add(CheckpointApplied(cp_id=cp_id, applied_on=get_clock(session)))
+    append_event(session, get_clock(session), "SYSTEM", "checkpoint_applied",
+                 "checkpoint", cp_id, {})
     session.commit()
-
-    # After scripted events, run tests + ageing + gate
-    run_all_tests(session)
-    evaluate_all_claims(session, GateTrigger.CLOCK_ADVANCE)
-
-
-def _cp1(session: Session, as_of: date) -> None:
-    """CP1 — 2017-12-01: Draft all claims, submit for gate evaluation."""
-    set_clock(session, date(2017, 12, 1))
+    # Run checks + rebuild intervals + fire escalations after each checkpoint
+    cur = get_clock(session)
+    check_pending_deprecations(session, cur)
+    run_due_checks(session, cur)
+    rebuild_all_intervals(session, cur)
 
 
-def _cp1b(session: Session, as_of: date) -> None:
-    """CP1b — first test run (handled by apply_checkpoint via run_all_tests)."""
-    set_clock(session, date(2017, 12, 1))
+# ── Checkpoint scripts ────────────────────────────────────────────────────────
 
+def _cp1(session: Session, _: date) -> None:
+    """CP1 — 2017-12-01: Reyes defines checks (already seeded); Grant submits CREATE for SCC-01–07; Reyes approves all except SCC-04."""
+    d = date(2017, 12, 1)
+    set_clock(session, d)
 
-def _cp2(session: Session, as_of: date) -> None:
-    """CP2 — 2018-03-02: Override expires."""
-    set_clock(session, date(2018, 3, 2))
-    # Expire any overrides past their expiry
-    for ov in session.exec(select(Override).where(Override.status == OverrideStatus.ACTIVE)).all():
-        if ov.expires_on < date(2018, 3, 2):
-            ov.status = OverrideStatus.EXPIRED
-            session.add(ov)
-            append_event(session, date(2018, 3, 2), "SYSTEM", "override_expired",
-                         "override", ov.id, {"claim_id": ov.claim_id})
+    # Submit CREATE change requests for all 7 SCCs
+    for scc_id in ["SCC-01", "SCC-02", "SCC-03", "SCC-04", "SCC-05", "SCC-06", "SCC-07"]:
+        cr = ChangeRequest(
+            id=f"CR-{scc_id}-CREATE",
+            type=ChangeRequestType.CREATE,
+            scc_id=scc_id,
+            requested_by="P-GRANT",
+            requested_on=d,
+            reason=f"Initial creation of {scc_id}",
+            status=ChangeRequestStatus.PENDING,
+        )
+        session.add(cr)
+    session.flush()
+
+    # Reyes rejects SCC-04 (not measurable)
+    sv04 = session.get(SCCVersion, "SCC-04-v1")
+    if sv04:
+        sv04.status = SCCVersionStatus.REJECTED
+        sv04.auditor_note = "Assertion not measurable — cannot define a checkable threshold."
+        session.add(sv04)
+    cr04 = session.get(ChangeRequest, "CR-SCC-04-CREATE")
+    if cr04:
+        cr04.status = ChangeRequestStatus.REJECTED
+        cr04.decided_by = "P-REYES"
+        cr04.decided_on = d
+        cr04.auditor_note = "Assertion not measurable."
+        session.add(cr04)
+
+    # Reyes approves SCC-01 to SCC-03, SCC-05, SCC-06, SCC-07 with pinned controls
+    scc_pins = {
+        "SCC-01": [("AC-01", "T-LEASTPRIV", "1"), ("AC-02", "T-VPNDEVICE", "1")],
+        "SCC-02": [("IA-01", "T-PWDPOLICY", "1"), ("IA-02", "T-SECRETS", "1")],
+        "SCC-03": [("SA-01", "T-SDLSCAN", "1")],
+        "SCC-05": [("CM-01", "", "")],
+        "SCC-06": [("AC-03", "T-MFA", "1")],
+        "SCC-07": [("OP-01", "T-UPTIME", "1")],
+    }
+    scc_standards = {
+        "SCC-01": (99.0, 365, 7, "TESTED"),
+        "SCC-02": (99.0, 365, 7, "TESTED"),
+        "SCC-03": (99.0, 365, 7, "TESTED"),
+        "SCC-05": (95.0, 365, 30, "ATTESTED"),
+        "SCC-06": (99.0, 365, 7, "TESTED"),
+        "SCC-07": (90.0, 365, 31, "TESTED"),
+    }
+    for scc_id, pins in scc_pins.items():
+        sv = session.get(SCCVersion, f"{scc_id}-v1")
+        if not sv:
+            continue
+        tup, roll, mx, ev = scc_standards[scc_id]
+        sv.status = SCCVersionStatus.ACTIVE
+        sv.active_from = d
+        sv.target_uptime_pct = tup
+        sv.rolling_window_days = roll
+        sv.max_single_downtime_days = mx
+        sv.evidence_type = EvidenceType(ev)
+        sv.approved_by = "P-REYES"
+        session.add(sv)
+        for ctrl_id, check_id, check_ver in pins:
+            if check_id:
+                session.add(SCCVersionControl(
+                    sccversion_id=sv.id,
+                    control_id=ctrl_id,
+                    check_id=check_id,
+                    check_version=check_ver,
+                ))
+        # Approve the CR
+        cr = session.get(ChangeRequest, f"CR-{scc_id}-CREATE")
+        if cr:
+            cr.status = ChangeRequestStatus.APPROVED
+            cr.decided_by = "P-REYES"
+            cr.decided_on = d
+            session.add(cr)
     session.flush()
 
 
-def _cp3(session: Session, as_of: date) -> None:
-    """CP3 — 2018-06-04: Engineer reports VPN gap."""
+def _cp1b(session: Session, _: date) -> None:
+    """CP1b — 2017-12-01: First check runs (handled via run_due_checks after apply_checkpoint)."""
+    # Clock stays 2017-12-01; run_due_checks fires via apply_checkpoint
+    pass
+
+
+def _cp2(session: Session, _: date) -> None:
+    """CP2 — 2018-03-02: SCC-01 still DOWN past Okafor's remediate due date → L4."""
+    set_clock(session, date(2018, 3, 2))
+
+
+def _cp3(session: Session, _: date) -> None:
+    """CP3 — 2018-06-04: New VPN snapshot → 6 unmanaged logins → AC-02 FAIL."""
     set_clock(session, date(2018, 6, 4))
-    create_finding(session, "AC-02",
-        "Unmanaged devices can connect to corporate VPN",
-        "Unmanaged devices can connect to corporate VPN; activity undetectable by DLP.",
-        "HIGH", "P-PRIYA", "P-PRIYA", source="manual_review")
 
 
-def _cp4(session: Session, as_of: date) -> None:
-    """CP4 — 2018-09-03: 90 days of no traction."""
-    set_clock(session, date(2018, 9, 3))
+def _cp4(session: Session, _: date) -> None:
+    """CP4 — 2018-09-03: Reyes approves T-PWDPOLICY v2; SCC-02 v1 → SUPERSEDED while down; v2 → ACTIVE."""
+    d = date(2018, 9, 3)
+    set_clock(session, d)
+
+    # Create REEVALUATE change request for SCC-02 (Grant)
+    cr = ChangeRequest(
+        id="CR-SCC-02-REEVAL",
+        type=ChangeRequestType.REEVALUATE,
+        scc_id="SCC-02",
+        requested_by="P-GRANT",
+        requested_on=d,
+        reason="Most systems moved to SSO; password policy standard should only apply to non-SSO systems with stricter length requirement.",
+        status=ChangeRequestStatus.APPROVED,
+        decided_by="P-REYES",
+        decided_on=d,
+        auditor_note="Approved. T-PWDPOLICY v2 replaces v1 for SCC-02.",
+    )
+    session.add(cr)
+    session.flush()
+
+    # Freeze SCC-02-v1
+    old_sv = session.get(SCCVersion, "SCC-02-v1")
+    if old_sv:
+        current_iv = session.exec(
+            select(StateInterval).where(StateInterval.sccversion_id == "SCC-02-v1",
+                                        StateInterval.end == None)  # noqa: E711
+        ).all()
+        was_down = any(i.state == SCCState.DOWN for i in list(current_iv))
+        old_sv.status = SCCVersionStatus.SUPERSEDED
+        old_sv.active_to = d
+        old_sv.superseded_while_down = was_down
+        session.add(old_sv)
+        for i in list(session.exec(
+            select(StateInterval).where(StateInterval.sccversion_id == "SCC-02-v1",
+                                        StateInterval.end == None)  # noqa: E711
+        ).all()):
+            i.end = d
+            session.add(i)
+
+    # Create SCC-02-v2
+    new_sv = SCCVersion(
+        id="SCC-02-v2",
+        scc_id="SCC-02",
+        version=2,
+        assertion_text="Systems not behind SSO enforce a minimum password length of 12 characters; Password complexity rules are enabled on all non-SSO systems; No credentials or secrets are exposed in code repositories",
+        status=SCCVersionStatus.ACTIVE,
+        active_from=d,
+        target_uptime_pct=99.0,
+        rolling_window_days=365,
+        max_single_downtime_days=7,
+        evidence_type=EvidenceType.TESTED,
+        supersedes_version_id="SCC-02-v1",
+        approved_by="P-REYES",
+        reason="SSO transition — stricter non-SSO standard.",
+    )
+    session.add(new_sv)
+    session.flush()
+    session.add(SCCVersionControl(sccversion_id="SCC-02-v2", control_id="IA-01",
+                                   check_id="T-PWDPOLICY", check_version="2"))
+    session.add(SCCVersionControl(sccversion_id="SCC-02-v2", control_id="IA-02",
+                                   check_id="T-SECRETS", check_version="1"))
+    session.flush()
 
 
-def _cp5(session: Session, as_of: date) -> None:
-    """CP5 — 2019-08-16: Internal review — access inappropriate."""
-    set_clock(session, date(2019, 8, 16))
-    create_finding(session, "AC-01",
-        "Access and privilege to critical systems is inappropriate",
-        "Quarterly review finds access and privilege to critical systems/data is inappropriate.",
-        "HIGH", "P-GRANT", "P-PRIYA", source="manual_review")
+def _cp5(session: Session, _: date) -> None:
+    """CP5 — 2019-08-16: New OP-01 collector submitted → PENDING → SCC-07 UNKNOWN.
+    Then clock advances to 2019-09-05 and Reyes approves it."""
+    d_start = date(2019, 8, 16)
+    set_clock(session, d_start)
+
+    # Priya submits a new OP-01 collector (simulating vendor switch)
+    new_col = Collector(
+        id="COL-OP01-2",
+        check_id="T-UPTIME",
+        version="2",
+        code_hash="def007",
+        written_by="P-PRIYA",
+        submitted_on=d_start,
+        status=CollectorStatus.PENDING,
+    )
+    session.add(new_col)
+    session.flush()
+    append_event(session, d_start, "P-PRIYA", "collector_submitted", "collector",
+                 "COL-OP01-2", {"check_id": "T-UPTIME", "version": "2"})
+    # Advance to 2019-09-05 and Reyes approves
+    # (clock advance with pending collector means SCC-07 is UNKNOWN during 2019-08-16 to 2019-09-05)
+    # Note: clock advance and approval done by CP5 continuation
 
 
-def _cp6(session: Session, as_of: date) -> None:
-    """CP6 — 2019-11-19: Password leaked in public repo."""
+def _cp5_approve(session: Session) -> None:
+    """Advance clock to 2019-09-05 and approve OP-01 collector v2."""
+    d_approve = date(2019, 9, 5)
+    set_clock(session, d_approve)
+    col = session.get(Collector, "COL-OP01-2")
+    if col:
+        col.status = CollectorStatus.APPROVED
+        col.approved_by = "P-REYES"
+        col.approved_on = d_approve
+        session.add(col)
+        append_event(session, d_approve, "P-REYES", "collector_approved",
+                     "collector", "COL-OP01-2", {})
+    session.flush()
+
+
+def _cp6(session: Session, _: date) -> None:
+    """CP6 — 2019-11-19: ftp_pass in public repo → T-SECRETS CRITICAL → SCC-02 v2 new L3."""
     set_clock(session, date(2019, 11, 19))
 
 
-def _cp7(session: Session, as_of: date) -> None:
-    """CP7 — 2020-06-15: First customer incident."""
-    from db import Incident
-    set_clock(session, date(2020, 6, 15))
-    inc = Incident(id="I-01", reported_on=date(2020, 6, 15),
-                   reporter="Customer A – government agency",
-                   product="Horizon", component="BusinessLayer",
-                   description="Horizon contacting unknown external domains",
-                   severity_rating=0, rated_by="P-GRANT")
-    session.add(inc)
+def _cp7(session: Session, _: date) -> None:
+    """CP7 — 2020-06-15: Grant requests DEPRECATE SCC-05, Reyes approves effective 2020-06-30."""
+    d = date(2020, 6, 15)
+    effective = date(2020, 6, 30)
+    set_clock(session, d)
+    cr = ChangeRequest(
+        id="CR-SCC-05-DEPRECATE",
+        type=ChangeRequestType.DEPRECATE,
+        scc_id="SCC-05",
+        requested_by="P-GRANT",
+        requested_on=d,
+        reason="Company no longer maintaining CM-01 as an attested SCC.",
+        status=ChangeRequestStatus.APPROVED,
+        decided_by="P-REYES",
+        decided_on=d,
+        effective_on=effective,
+        auditor_note="Approved. SCC-05 citable for periods ending on or before 2020-06-30.",
+    )
+    session.add(cr)
     session.flush()
-    append_event(session, date(2020, 6, 15), "P-GRANT", "incident_reported",
-                 "incident", "I-01", {"component": "BusinessLayer", "severity": 0})
+    # Apply the deprecation immediately (effective_on is in the near future;
+    # check_pending_deprecations will fire it when the clock reaches 2020-06-30)
+    append_event(session, d, "P-REYES", "change_request_approved",
+                 "changerequest", cr.id, {"type": "DEPRECATE", "scc_id": "SCC-05"})
 
 
-def _cp8(session: Session, as_of: date) -> None:
-    """CP8 — 2020-10-14: Second customer incident."""
-    from db import Incident
+def _cp8(session: Session, _: date) -> None:
+    """CP8 — 2020-10-14: Sep 2020 availability 99.71% → SCC-07 DOWN for September."""
     set_clock(session, date(2020, 10, 14))
-    inc = Incident(id="I-02", reported_on=date(2020, 10, 14),
-                   reporter="Customer B – security firm",
-                   product="Horizon", component="BusinessLayer",
-                   description="Horizon downloading a malicious file",
-                   severity_rating=0, rated_by="P-GRANT")
-    session.add(inc)
-    session.flush()
-    append_event(session, date(2020, 10, 14), "P-GRANT", "incident_reported",
-                 "incident", "I-02", {"component": "BusinessLayer", "severity": 0})
 
 
-def _cp9(session: Session, as_of: date) -> None:
+def _cp9(session: Session, _: date) -> None:
     """CP9 — 2020-12-14: Wrap-up."""
     set_clock(session, date(2020, 12, 14))
 
 
-CHECKPOINTS: dict[str, object] = {
+CHECKPOINTS: dict = {
     "CP1": _cp1, "CP1b": _cp1b, "CP2": _cp2, "CP3": _cp3,
     "CP4": _cp4, "CP5": _cp5, "CP6": _cp6,
     "CP7": _cp7, "CP8": _cp8, "CP9": _cp9,

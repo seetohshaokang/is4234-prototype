@@ -1,124 +1,203 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { XCircle } from "lucide-react";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import api from "../api/client";
-import { useAppStore } from "../store/useAppStore";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
+import CasePanel from "../components/CasePanel";
 
 interface Finding {
   id: string;
   control_id: string;
+  check_id: string | null;
   severity: string;
   status: string;
   opened_on: string;
-  closed_on?: string;
+  closed_on: string | null;
+  days_open: number | null;
+  level: number | null;
+  assigned_to_name: string | null;
+  source: string;
   title: string;
-  description?: string;
-  owner_id: string;
-  raised_by_id: string;
+  description: string;
+}
+
+const SEVERITIES = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const STATUSES = ["OPEN", "IN_REVIEW", "RESOLVED", "CLOSED"];
+
+const SEVERITY_COLORS: Record<string, string> = {
+  CRITICAL: "bg-red-100 text-red-800 border-red-200",
+  HIGH:     "bg-orange-100 text-orange-800 border-orange-200",
+  MEDIUM:   "bg-yellow-100 text-yellow-800 border-yellow-200",
+  LOW:      "bg-gray-100 text-gray-700 border-gray-200",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  OPEN:      "bg-red-100 text-red-700 border-red-200",
+  IN_REVIEW: "bg-blue-100 text-blue-700 border-blue-200",
+  RESOLVED:  "bg-green-100 text-green-700 border-green-200",
+  CLOSED:    "bg-slate-100 text-slate-500 border-slate-200",
+};
+// mirrors Badge.tsx variants exactly so filter pills match the status column
+
+function SeverityBadge({ severity }: { severity: string }) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${SEVERITY_COLORS[severity] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+      {severity}
+    </span>
+  );
+}
+
+function FilterPill({
+  label, active, color, onClick,
+}: { label: string; active: boolean; color: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border transition-opacity ${color} ${active ? "opacity-100" : "opacity-35"}`}
+    >
+      {label}
+    </button>
+  );
 }
 
 export default function FindingsPage() {
-  const { actorId } = useAppStore();
-  const qc = useQueryClient();
+  const [severityFilter, setSeverityFilter] = useState<Set<string>>(new Set());
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: findings = [], isLoading } = useQuery<Finding[]>({
     queryKey: ["findings"],
     queryFn: () => api.get("/findings").then(r => r.data),
   });
 
-  const closeMut = useMutation({
-    mutationFn: (id: string) => api.post(`/findings/${id}/close`, { actor_id: actorId }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["findings"] }),
-  });
-
-  const open = findings.filter(f => f.status === "OPEN");
-  const closed = findings.filter(f => f.status !== "OPEN");
-
   if (isLoading) return <div className="text-slate-400 text-sm">Loading…</div>;
 
+  const toggle = (set: Set<string>, val: string): Set<string> => {
+    const next = new Set(set);
+    next.has(val) ? next.delete(val) : next.add(val);
+    return next;
+  };
+
+  const filtered = findings.filter(f => {
+    if (severityFilter.size > 0 && !severityFilter.has(f.severity)) return false;
+    if (statusFilter.size > 0 && !statusFilter.has(f.status)) return false;
+    return true;
+  });
+
+  const open = findings.filter(f => f.status === "OPEN" || f.status === "IN_REVIEW");
+  const closed = findings.filter(f => f.status === "RESOLVED" || f.status === "CLOSED");
+
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-slate-900">Findings</h1>
-      <p className="text-sm text-slate-500">Security findings from automated and manual tests.</p>
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900">Cases</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Security cases from automated and manual evidence tests.</p>
+      </div>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-slate-700">Open Findings</h2>
-            <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{open.length}</span>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <h2 className="text-sm font-semibold text-slate-700">All Cases</h2>
+              <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-0.5 rounded-full">{open.length} open</span>
+              {closed.length > 0 && (
+                <span className="bg-slate-100 text-slate-500 text-xs font-medium px-2 py-0.5 rounded-full">{closed.length} closed</span>
+              )}
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-400 mr-0.5">Severity</span>
+                {SEVERITIES.map(s => (
+                  <FilterPill
+                    key={s}
+                    label={s}
+                    active={severityFilter.size === 0 || severityFilter.has(s)}
+                    color={SEVERITY_COLORS[s]}
+                    onClick={() => setSeverityFilter(prev => toggle(prev, s))}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-400 mr-0.5">Status</span>
+                {STATUSES.map(s => (
+                  <FilterPill
+                    key={s}
+                    label={s}
+                    active={statusFilter.size === 0 || statusFilter.has(s)}
+                    color={STATUS_COLORS[s]}
+                    onClick={() => setStatusFilter(prev => toggle(prev, s))}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         </CardHeader>
         <CardBody className="p-0">
-          {open.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-slate-400">No open findings</div>
+          {filtered.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-slate-400">No cases match the selected filters.</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100">
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">ID</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Control</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Check</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Title</th>
                   <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened</th>
-                  <th className="px-5 py-2"></th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Status</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Level</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Assigned To</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Days Open</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Opened On</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed On</th>
+                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Source</th>
+                  <th className="px-5 py-2" />
                 </tr>
               </thead>
               <tbody>
-                {open.map(f => (
-                  <tr key={f.id} className="border-b border-slate-50 last:border-0 hover:bg-slate-50">
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{f.id}</td>
-                    <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{f.control_id}</td>
-                    <td className="px-5 py-2.5 text-slate-700">{f.title}</td>
-                    <td className="px-5 py-2.5"><Badge value={f.severity} /></td>
-                    <td className="px-5 py-2.5 text-xs text-slate-400">{f.opened_on}</td>
-                    <td className="px-5 py-2.5">
-                      <button
-                        onClick={() => closeMut.mutate(f.id)}
-                        disabled={closeMut.isPending}
-                        className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 disabled:opacity-50"
-                      >
-                        <XCircle size={13} /> Close
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map(f => {
+                  const isClosed = f.status === "RESOLVED" || f.status === "CLOSED";
+                  return (
+                    <tr key={f.id} className={`border-b border-slate-50 last:border-0 ${isClosed ? "opacity-50" : "hover:bg-slate-50"}`}>
+                      <td className="px-5 py-2.5 font-mono text-xs text-slate-500">{f.id}</td>
+                      <td className="px-5 py-2.5 font-mono text-xs text-blue-600">{f.check_id ?? f.control_id}</td>
+                      <td className="px-5 py-2.5 text-slate-700 font-medium">{f.title}</td>
+                      <td className="px-5 py-2.5"><SeverityBadge severity={f.severity} /></td>
+                      <td className="px-5 py-2.5"><Badge value={f.status} /></td>
+                      <td className="px-5 py-2.5">
+                        {f.level ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border bg-purple-100 text-purple-700 border-purple-200">
+                            L{f.level}
+                          </span>
+                        ) : <span className="text-xs text-slate-300">—</span>}
+                      </td>
+                      <td className="px-5 py-2.5 text-xs text-slate-500">{f.assigned_to_name ?? <span className="text-slate-300">—</span>}</td>
+                      <td className="px-5 py-2.5 text-xs text-slate-500">
+                        {f.days_open != null ? (
+                          <span className={f.days_open > 60 ? "text-red-600 font-medium" : ""}>{f.days_open}d</span>
+                        ) : "—"}
+                      </td>
+                      <td className="px-5 py-2.5 text-xs text-slate-400">{f.opened_on}</td>
+                      <td className="px-5 py-2.5 text-xs text-slate-400">{f.closed_on ?? "—"}</td>
+                      <td className="px-5 py-2.5 text-xs text-slate-400">{f.source}</td>
+                      <td className="px-5 py-2.5 text-right">
+                        <button
+                          onClick={() => setSelectedId(f.id)}
+                          className="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 rounded px-3 py-1.5 transition-colors whitespace-nowrap"
+                        >
+                          View details
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
         </CardBody>
       </Card>
 
-      {closed.length > 0 && (
-        <Card>
-          <CardHeader>
-            <h2 className="text-sm font-semibold text-slate-500">Closed Findings ({closed.length})</h2>
-          </CardHeader>
-          <CardBody className="p-0">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">ID</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Control</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Title</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Severity</th>
-                  <th className="text-left px-5 py-2 text-xs font-medium text-slate-500">Closed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {closed.map(f => (
-                  <tr key={f.id} className="border-b border-slate-50 last:border-0 opacity-60">
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{f.id}</td>
-                    <td className="px-5 py-2.5 font-mono text-xs text-slate-400">{f.control_id}</td>
-                    <td className="px-5 py-2.5 text-slate-500">{f.title}</td>
-                    <td className="px-5 py-2.5"><Badge value={f.severity} /></td>
-                    <td className="px-5 py-2.5 text-xs text-slate-400">{f.closed_on ?? "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardBody>
-        </Card>
+      {selectedId && (
+        <CasePanel id={selectedId} onClose={() => setSelectedId(null)} />
       )}
     </div>
   );

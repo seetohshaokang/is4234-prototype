@@ -22,5 +22,5 @@ COPY --from=frontend /fe/dist ./frontend/dist
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
 
-# Seed deterministic demo data, then serve (Render injects $PORT)
-CMD ["sh", "-c", "python seed.py && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Bind the port immediately; demo data is seeded in the background at startup
+CMD ["sh", "-c", "exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

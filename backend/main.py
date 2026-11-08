@@ -345,7 +345,7 @@ def get_scc(scc_id: str):
                 "versions": versions_with_intervals}
 
 
-@app.post("/sccs")
+@router.post("/sccs")
 def create_scc_route(body: SCCCreateBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -360,7 +360,7 @@ def create_scc_route(body: SCCCreateBody, actor_id: str = "P-REYES"):
             raise HTTPException(400, str(e))
 
 
-@app.post("/sccs/{scc_id}/revise")
+@router.post("/sccs/{scc_id}/revise")
 def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -375,7 +375,7 @@ def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-REYES"
             raise HTTPException(400, str(e))
 
 
-@app.post("/sccs/{scc_id}/deprecate")
+@router.post("/sccs/{scc_id}/deprecate")
 def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
@@ -517,7 +517,7 @@ def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P
             raise HTTPException(403, str(e))
 
 
-@app.get("/change-requests/{cr_id}/notes")
+@router.get("/change-requests/{cr_id}/notes")
 def list_cr_notes(cr_id: str):
     with get_session() as session:
         notes = list(session.exec(
@@ -536,7 +536,7 @@ def list_cr_notes(cr_id: str):
         ]
 
 
-@app.post("/change-requests/{cr_id}/notes")
+@router.post("/change-requests/{cr_id}/notes")
 def add_cr_note(cr_id: str, body: CRNoteCreate):
     with get_session() as session:
         cr = session.get(ChangeRequest, cr_id)
@@ -686,7 +686,7 @@ def update_finding_level(finding_id: str, body: CaseLevelUpdate, actor_id: Optio
             raise HTTPException(status_code=403, detail=str(e))
 
 
-@app.patch("/findings/{finding_id}/assign")
+@router.patch("/findings/{finding_id}/assign")
 def assign_finding(finding_id: str, body: CaseAssign, actor_id: str = "SYSTEM"):
     with get_session() as session:
         f = session.get(Finding, finding_id)
@@ -750,6 +750,7 @@ def add_case_note(finding_id: str, body: CaseNoteCreate):
 @router.get("/escalations")
 def list_escalations():
     with get_session() as session:
+        as_of = get_clock(session)
         escs = list(session.exec(
             select(Escalation).order_by(Escalation.created_on.desc())  # type: ignore[attr-defined]
         ).all())

@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
+import { can, useCurrentRole } from "../lib/permissions";
 import Badge from "./Badge";
 
 interface CaseFinding {
@@ -65,8 +66,10 @@ const ESCALATION_LADDER = [
 
 export default function CasePanel({ id, onClose }: { id: string; onClose: () => void }) {
   const { actorId } = useAppStore();
+  const role = useCurrentRole();
   const qc = useQueryClient();
   const [noteBody, setNoteBody] = useState("");
+  const [error, setError] = useState("");
 
   const { data: finding, isLoading } = useQuery<CaseFinding>({
     queryKey: ["finding", id],
@@ -77,7 +80,6 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
     queryKey: ["personas"],
     queryFn: () => api.get("/personas").then(r => r.data),
   });
-  const currentRole = personas.find(p => p.id === actorId)?.role ?? "public";
 
   const { data: caseEscalations = [] } = useQuery<CaseEscalation[]>({
     queryKey: ["case-escalations", id],
@@ -92,47 +94,61 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
   });
 
   const invalidate = () => {
+    setError("");
     qc.invalidateQueries({ queryKey: ["finding", id] });
     qc.invalidateQueries({ queryKey: ["case-escalations", id] });
     qc.invalidateQueries({ queryKey: ["escalations"] });
     qc.invalidateQueries({ queryKey: ["findings"] });
   };
+  const onFail = (e: any) => setError(e.response?.data?.detail ?? "Action failed");
 
   const statusMut = useMutation({
     mutationFn: (status: string) => api.patch(`/findings/${id}/status`, { status }, { params: { actor_id: actorId } }),
     onSuccess: invalidate,
+    onError: onFail,
   });
 
   const levelMut = useMutation({
     mutationFn: (level: number) => api.patch(`/findings/${id}/level`, { level }, { params: { actor_id: actorId } }),
     onSuccess: invalidate,
+    onError: onFail,
   });
 
   const assignMut = useMutation({
     mutationFn: (person_id: string) => api.patch(`/findings/${id}/assign`, { person_id }, { params: { actor_id: actorId } }),
     onSuccess: () => {
+      setError("");
       qc.invalidateQueries({ queryKey: ["finding", id] });
       qc.invalidateQueries({ queryKey: ["findings"] });
     },
+    onError: onFail,
   });
 
   const noteMut = useMutation({
     mutationFn: (body: string) => api.post(`/findings/${id}/notes`, { body, author_id: actorId }),
     onSuccess: () => {
+      setError("");
       setNoteBody("");
       qc.invalidateQueries({ queryKey: ["case-notes", id] });
     },
+    onError: onFail,
   });
 
   const ackMut = useMutation({
     mutationFn: (escId: number) => api.post(`/escalations/${escId}/ack`, null, { params: { actor_id: actorId } }),
     onSuccess: invalidate,
+    onError: onFail,
   });
 
   const isActive = finding?.status === "OPEN" || finding?.status === "IN_REVIEW";
   const nextLevel = finding?.level != null && finding.level < 3 ? finding.level + 1 : null;
-  const escalateAllowed: Record<number, string> = { 2: "control_owner", 3: "security_lead" };
-  const canEscalate = isActive && nextLevel !== null && escalateAllowed[nextLevel] === currentRole;
+  const canEscalate = isActive && nextLevel !== null && can.escalateTo(role, nextLevel);
+  const transitions = finding
+    ? (TRANSITIONS[finding.status] ?? []).filter(t =>
+        t.next === "IN_REVIEW" ? can.pickUp(role)
+        : t.next === "RESOLVED" ? can.resolve(role)
+        : can.closeFalse(role))
+    : [];
 
   return (
     <>
@@ -173,7 +189,7 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
             <div className="px-6 pt-5 pb-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900 mb-3">{finding.title}</h2>
               <div className="flex flex-wrap gap-2">
-                {(TRANSITIONS[finding.status] ?? []).map(t => (
+                {transitions.map(t => (
                   <button
                     key={t.next}
                     onClick={() => statusMut.mutate(t.next)}
@@ -193,6 +209,11 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
                   </button>
                 )}
               </div>
+              {error && (
+                <div className="mt-3 rounded-md px-3 py-2 text-sm font-medium bg-red-50 text-red-800 border border-red-200">
+                  {error}
+                </div>
+              )}
             </div>
 
             {/* Metadata */}
@@ -284,7 +305,7 @@ export default function CasePanel({ id, onClose }: { id: string; onClose: () => 
                         <div className="text-xs text-slate-500">{row.action}</div>
                       </div>
                       {esc && <Badge value={esc.status} />}
-                      {esc && esc.status === "OPEN" && isCurrentLevel && (
+                      {esc && esc.status === "OPEN" && isCurrentLevel && can.ack(role, esc.assigned_to_role) && (
                         <button
                           onClick={() => ackMut.mutate(esc.id)}
                           disabled={ackMut.isPending}

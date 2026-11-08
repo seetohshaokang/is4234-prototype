@@ -3,6 +3,7 @@ import "driver.js/dist/driver.css";
 import type { NavigateFunction } from "react-router-dom";
 
 const STEP_NAV: Record<number, string> = {
+  2: "/sccs",
   3: "/checks",
   4: "/changes",
   5: "/findings",
@@ -15,15 +16,25 @@ const steps: DriveStep[] = [
     popover: {
       title: "Welcome to SCC Library",
       description:
-        "A proof-of-concept Security Citation Code library built around the SolarWinds case study (2017–2020). Checkpoint buttons walk that company's timeline; you can also act as any persona and interact with the system directly.",
+        "A proof-of-concept that tracks public security statements as measurable claims. Evidence — not the organisation — decides whether each claim is UPHELD or DOWN. Built around the SolarWinds case study (2017–2020).",
       align: "center",
+    },
+  },
+  {
+    element: "[data-tour='role']",
+    popover: {
+      title: "Pick a persona first",
+      description:
+        "Each role sees different tabs and powers: DevSecOps works cases, the Security Lead proposes changes, the External Auditor approves them, the Disclosure Committee decides top-level escalations. Public gets the external-stakeholder view — switch to an internal role for the full tour.",
+      side: "right",
     },
   },
   {
     element: 'a[href="/sccs"]',
     popover: {
       title: "SCC Library",
-      description: "All active and historical Security Citation Codes. Each SCC is a measurable security assertion tracked like an SLA — UPHELD, DOWN, or UNKNOWN based on automated evidence.",
+      description:
+        "Every security assertion with its current state and uptime. State is today's verdict; the percentage is the share of its whole tracked life spent upheld — the two can disagree.",
       side: "right",
     },
   },
@@ -31,15 +42,8 @@ const steps: DriveStep[] = [
     element: 'a[href="/checks"]',
     popover: {
       title: "Security Checks",
-      description: "The automated evidence tests behind each SCC. A failing check puts the mapped SCC DOWN and opens a finding automatically.",
-      side: "right",
-    },
-  },
-  {
-    element: 'a[href="/checks"]',
-    popover: {
-      title: "Security Checks",
-      description: "Each check has a collector script — the measurement tool itself is versioned and must be approved by the External Auditor before results count.",
+      description:
+        "The automated evidence tests behind each claim — threshold, cadence, data source, and latest results. Evidence arrives as periodic snapshots of company systems; a failing check puts the mapped claim DOWN.",
       side: "right",
     },
   },
@@ -47,7 +51,8 @@ const steps: DriveStep[] = [
     element: 'a[href="/changes"]',
     popover: {
       title: "Change Requests",
-      description: "Any change to an SCC — CREATE, REVISION, or DEPRECATE — goes through a formal change request approved by the External Auditor. The full history is preserved.",
+      description:
+        "Assertions only change through formal requests — create, re-evaluate, or deprecate. The Security Lead proposes; only the External Auditor can approve. Full version history is preserved.",
       side: "right",
     },
   },
@@ -55,7 +60,8 @@ const steps: DriveStep[] = [
     element: 'a[href="/findings"]',
     popover: {
       title: "Cases",
-      description: "Open security findings. Each is linked to a control and blocks the mapped SCC's uptime while open. Click 'View details' to manage a case — assign it, change status, add notes, or escalate.",
+      description:
+        "A failed check opens a case automatically; a passing check closes it. Picking a case up moves it to IN_REVIEW and fires the first escalation — untriaged cases simply wait here.",
       side: "right",
     },
   },
@@ -63,7 +69,8 @@ const steps: DriveStep[] = [
     element: 'a[href="/escalations"]',
     popover: {
       title: "Escalations",
-      description: "Cases climb L1 (control owner) → L2 (security lead) → L3 (disclosure committee). You can only Ack escalations assigned to your current role; at L3 the committee records a formal decision.",
+      description:
+        "Cases climb L1 (control owner) → L2 (security lead) → L3 (disclosure committee). Raising a level resolves the previous demand; at L3 the committee records a formal decision with a written rationale.",
       side: "right",
     },
   },
@@ -71,22 +78,16 @@ const steps: DriveStep[] = [
     element: 'a[href="/audit"]',
     popover: {
       title: "Audit Trail",
-      description: "Every action in the system is recorded in a hash-chained append-only log. Filter by category or search by actor and subject to trace any event.",
-      side: "right",
-    },
-  },
-  {
-    element: "[data-tour='role']",
-    popover: {
-      title: "Active persona",
-      description: "Switch between personas to see role-based access in action. David Ng (External Auditor) can create and revise SCCs. Sharon Wong (Audit Committee) sees committee-level escalations.",
+      description:
+        "Every action lands in a hash-chained append-only log. Use Verify Chain to prove nothing was altered — each entry cryptographically links to the one before it.",
       side: "right",
     },
   },
   {
     popover: {
       title: "You're set",
-      description: "Start the Guided Demo to walk the SolarWinds timeline checkpoint by checkpoint, or explore freely. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
+      description:
+        "That covers the tabs. For a hands-on run, start the Guided demo (bottom-left) — it walks the workflow step by step on the real screens. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
       align: "center",
     },
   },

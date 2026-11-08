@@ -16,7 +16,6 @@ const steps: DriveStep[] = [
       title: "Welcome to SCC Library",
       description:
         "A proof-of-concept Security Citation Code library built around the SolarWinds case study (2017–2020). Checkpoint buttons walk that company's timeline; you can also act as any persona and interact with the system directly.",
-      side: "over",
       align: "center",
     },
   },
@@ -88,7 +87,6 @@ const steps: DriveStep[] = [
     popover: {
       title: "You're set",
       description: "Start the Guided Demo to walk the SolarWinds timeline checkpoint by checkpoint, or explore freely. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
-      side: "over",
       align: "center",
     },
   },

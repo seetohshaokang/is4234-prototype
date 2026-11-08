@@ -1016,8 +1016,9 @@ def list_audit(limit: int = 500, action: Optional[str] = None, actor_id: Optiona
 @router.get("/audit/verify")
 def verify_audit():
     with get_session() as session:
-        ok, msg = verify_chain(session)
-        return {"valid": ok, "message": msg}
+        ok, broken_at = verify_chain(session)
+        message = "Chain intact — all hashes verified." if ok else f"Chain broken at event #{broken_at}."
+        return {"valid": ok, "message": message}
 
 
 # ── Checkpoints ───────────────────────────────────────────────────────────────

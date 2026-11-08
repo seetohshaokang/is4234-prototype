@@ -10,8 +10,6 @@ import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
 import { cn } from "../lib/utils";
 import { startTour } from "../lib/tour";
-import DemoCoach from "./DemoCoach";
-import { DEMO_STEPS } from "../lib/demoScript";
 
 interface Persona { id: string; name: string; role: string; title: string; }
 
@@ -31,7 +29,6 @@ const NAV_INTERNAL = [
 ];
 
 const TOUR_KEY = "scc-tour-seen";
-const COACH_KEY = "scc-coach-step";
 
 const ROLE_THEME: Record<string, {
   sidebar: string;
@@ -54,30 +51,12 @@ export default function AppShell({ children }: { children: ReactNode }) {
     () => !localStorage.getItem(TOUR_KEY)
   );
   const [resetting, setResetting] = useState(false);
-  const [coachStep, setCoachStep] = useState<number | null>(() => {
-    const saved = localStorage.getItem(COACH_KEY);
-    if (saved === null) return null;
-    const i = Number(saved);
-    return i >= 0 && i < DEMO_STEPS.length ? i : null;
-  });
   const navigate = useNavigate();
-
-  const setCoach = (i: number | null) => {
-    setCoachStep(i);
-    if (i === null) localStorage.removeItem(COACH_KEY);
-    else localStorage.setItem(COACH_KEY, String(i));
-  };
 
   const beginTour = () => {
     localStorage.setItem(TOUR_KEY, "1");
     setShowWelcome(false);
     startTour(navigate);
-  };
-
-  const beginDemo = () => {
-    localStorage.setItem(TOUR_KEY, "1");
-    setShowWelcome(false);
-    setCoach(0);
   };
 
   const dismissWelcome = () => {
@@ -176,14 +155,14 @@ export default function AppShell({ children }: { children: ReactNode }) {
           )}
         </div>
 
-        {/* Guided demo relaunch */}
+        {/* Feature tour relaunch */}
         <button
-          onClick={() => setCoach(0)}
-          title="Start the guided demo"
+          onClick={beginTour}
+          title="Replay the feature tour"
           className={cn("flex items-center justify-center gap-1.5 border-t px-4 py-2.5 text-xs text-slate-400 hover:text-white transition-colors", theme.border, theme.navHover)}
         >
           <CircleHelp size={14} />
-          Guided demo
+          Feature tour
         </button>
 
         {/* Demo data reset */}
@@ -218,7 +197,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               would behave.
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              Want a guided demo of the case study, or a quick tour of each tab?
+              Take a quick tour of each tab to see how it works.
             </p>
             <div className="mt-5 flex gap-2 justify-end">
               <button
@@ -229,29 +208,16 @@ export default function AppShell({ children }: { children: ReactNode }) {
               </button>
               <button
                 onClick={beginTour}
-                className="text-sm text-slate-600 hover:text-slate-800 border border-slate-300 px-3 py-2 rounded-md transition-colors"
-              >
-                Feature tour
-              </button>
-              <button
-                onClick={beginDemo}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-md transition-colors"
               >
-                Guided demo
+                Feature tour
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Guided demo coach panel */}
-      {coachStep !== null && (
-        <DemoCoach
-          step={coachStep}
-          onStep={setCoach}
-          onFeatureTour={beginTour}
-        />
-      )}
+
     </div>
   );
 }

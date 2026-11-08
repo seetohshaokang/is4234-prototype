@@ -86,7 +86,8 @@ const steps: DriveStep[] = [
   {
     popover: {
       title: "You're set",
-      description: "Start the Guided Demo to walk the SolarWinds timeline checkpoint by checkpoint, or explore freely. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
+      description:
+        "That covers the tabs — try a persona switch and work a case end to end: pick it up, escalate it, and watch the audit trail record every move. Reopen this tour anytime with the Feature tour button at the bottom of the sidebar.",
       align: "center",
     },
   },

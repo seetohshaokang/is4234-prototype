@@ -87,7 +87,7 @@ const steps: DriveStep[] = [
     popover: {
       title: "You're set",
       description:
-        "That covers the tabs. For a hands-on run, start the Guided demo (bottom-left) — it walks the workflow step by step on the real screens. Reopen this tour anytime with the '?' button at the bottom of the sidebar.",
+        "That covers the tabs — try a persona switch and work a case end to end: pick it up, escalate it, and watch the audit trail record every move. Reopen this tour anytime with the Feature tour button at the bottom of the sidebar.",
       align: "center",
     },
   },

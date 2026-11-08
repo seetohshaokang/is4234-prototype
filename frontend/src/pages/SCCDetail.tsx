@@ -258,7 +258,6 @@ export default function SCCDetail() {
     queryFn: () => api.get("/personas").then(r => r.data),
   });
   const isAuditor = personas.find(p => p.id === actorId)?.role === "independent_auditor";
-  const personaName = (id: string) => personas.find(p => p.id === id)?.name ?? id;
 
   const { data: scc, isLoading, error } = useQuery<SCCDetail>({
     queryKey: ["scc", id],

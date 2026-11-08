@@ -4,7 +4,6 @@ import api from "../api/client";
 import Badge from "../components/Badge";
 import Card, { CardHeader, CardBody } from "../components/Card";
 import CasePanel from "../components/CasePanel";
-import { can, useCurrentRole } from "../lib/permissions";
 
 interface Escalation {
   id: number;
@@ -86,7 +85,6 @@ function EscalationTable({ escalations, dimmed, onSelect }: { escalations: Escal
 }
 
 export default function EscalationsPage() {
-  const role = useCurrentRole();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: escalations = [], isLoading } = useQuery<Escalation[]>({

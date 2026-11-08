@@ -25,7 +25,7 @@ const steps: DriveStep[] = [
     popover: {
       title: "Pick a persona first",
       description:
-        "Each role sees different tabs and powers: Priya Nair (DevSecOps) works cases, Marcus Tan (Security Lead) proposes changes, David Ng (External Auditor) approves them, Rachel Lim (Disclosure Committee) decides top-level escalations. Public gets the external-stakeholder view — switch to an internal persona for the full tour.",
+        "Each role sees different tabs and powers: DevSecOps works cases, the Security Lead proposes changes, the External Auditor approves them, the Disclosure Committee decides top-level escalations. Public gets the external-stakeholder view — switch to an internal role for the full tour.",
       side: "right",
     },
   },

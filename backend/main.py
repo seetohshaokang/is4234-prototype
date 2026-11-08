@@ -37,7 +37,36 @@ from engine.sla import uptime_pct, rolling_target_met
 from audit import verify_chain, append_event
 from seed import seed_db, generate_snapshots, apply_all_checkpoints, patch_case_statuses
 
-app = FastAPI(title="SCC Library API", version="1.0.0")
+
+def _seed_if_empty() -> None:
+    """Populate the demo world in the background on a fresh database."""
+    try:
+        from db import get_session, SCC
+        with get_session() as s:
+            if s.exec(select(SCC)).first() is not None:
+                return
+        print("[startup] empty database — seeding demo data")
+        generate_snapshots()
+        seed_db()
+        apply_all_checkpoints()
+        patch_case_statuses()
+        print("[startup] seed complete")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+
+
+import threading
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    threading.Thread(target=_seed_if_empty, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="SCC Library API", version="1.0.0", lifespan=lifespan)
 router = APIRouter()
 create_tables()
 

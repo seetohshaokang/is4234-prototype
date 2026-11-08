@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Library, FlaskConical,
   AlertTriangle, GitBranch, BookOpen, Info,
-  CircleHelp, GitPullRequest,
+  CircleHelp, GitPullRequest, RotateCcw,
 } from "lucide-react";
 import api from "../api/client";
 import { useAppStore } from "../store/useAppStore";
@@ -53,6 +53,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const [showWelcome, setShowWelcome] = useState(
     () => !localStorage.getItem(TOUR_KEY)
   );
+  const [resetting, setResetting] = useState(false);
   const [coachStep, setCoachStep] = useState<number | null>(() => {
     const saved = localStorage.getItem(COACH_KEY);
     if (saved === null) return null;
@@ -82,6 +83,18 @@ export default function AppShell({ children }: { children: ReactNode }) {
   const dismissWelcome = () => {
     localStorage.setItem(TOUR_KEY, "1");
     setShowWelcome(false);
+  };
+
+  const resetDemo = async () => {
+    if (!window.confirm("Reset all demo data back to the seeded state?")) return;
+    setResetting(true);
+    try {
+      await api.post("/reset");
+      window.location.reload();
+    } catch {
+      setResetting(false);
+      window.alert("Reset failed — try again in a moment.");
+    }
   };
 
   const { data: personas = [] } = useQuery<Persona[]>({
@@ -171,6 +184,17 @@ export default function AppShell({ children }: { children: ReactNode }) {
         >
           <CircleHelp size={14} />
           Guided demo
+        </button>
+
+        {/* Demo data reset */}
+        <button
+          onClick={resetDemo}
+          disabled={resetting}
+          title="Reset all demo data to the seeded state"
+          className={cn("flex items-center justify-center gap-1.5 border-t px-4 py-2.5 text-xs text-slate-400 hover:text-white transition-colors disabled:opacity-50", theme.border, theme.navHover)}
+        >
+          <RotateCcw size={14} />
+          {resetting ? "Resetting…" : "Reset data"}
         </button>
       </aside>
 

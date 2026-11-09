@@ -882,7 +882,7 @@ def apply_checkpoint(session: Session, cp_id: str) -> None:
 # ── Checkpoint scripts ────────────────────────────────────────────────────────
 
 def _cp1(session: Session, _: date) -> None:
-    """CP1 — 2017-12-01: Reyes defines checks (already seeded); Grant submits CREATE for SCC-01–07; Reyes approves all except SCC-04."""
+    """CP1 — 2017-12-01: David defines checks (already seeded); Marcus submits CREATE for SCC-01–07; David approves all except SCC-04."""
     d = date(2017, 12, 1)
     set_clock(session, d)
 
@@ -892,7 +892,7 @@ def _cp1(session: Session, _: date) -> None:
             id=f"CR-{scc_id}-CREATE",
             type=ChangeRequestType.CREATE,
             scc_id=scc_id,
-            requested_by="P-GRANT",
+            requested_by="P-MARCUS",
             requested_on=d,
             reason=f"Initial creation of {scc_id}",
             status=ChangeRequestStatus.PENDING,
@@ -900,7 +900,7 @@ def _cp1(session: Session, _: date) -> None:
         session.add(cr)
     session.flush()
 
-    # Reyes rejects SCC-04 (not measurable)
+    # David rejects SCC-04 (not measurable)
     sv04 = session.get(SCCVersion, "SCC-04-v1")
     if sv04:
         sv04.status = SCCVersionStatus.REJECTED
@@ -909,12 +909,12 @@ def _cp1(session: Session, _: date) -> None:
     cr04 = session.get(ChangeRequest, "CR-SCC-04-CREATE")
     if cr04:
         cr04.status = ChangeRequestStatus.REJECTED
-        cr04.decided_by = "P-REYES"
+        cr04.decided_by = "P-DAVID"
         cr04.decided_on = d
         cr04.auditor_note = "Assertion not measurable."
         session.add(cr04)
 
-    # Reyes approves SCC-01 to SCC-03, SCC-05, SCC-06, SCC-07 with pinned controls
+    # David approves SCC-01 to SCC-03, SCC-05, SCC-06, SCC-07 with pinned controls
     scc_pins = {
         "SCC-01": [("AC-01", "T-LEASTPRIV", "1"), ("AC-02", "T-VPNDEVICE", "1")],
         "SCC-02": [("IA-01", "T-PWDPOLICY", "1"), ("IA-02", "T-SECRETS", "1")],
@@ -942,7 +942,7 @@ def _cp1(session: Session, _: date) -> None:
         sv.rolling_window_days = roll
         sv.max_single_downtime_days = mx
         sv.evidence_type = EvidenceType(ev)
-        sv.approved_by = "P-REYES"
+        sv.approved_by = "P-DAVID"
         session.add(sv)
         for ctrl_id, check_id, check_ver in pins:
             if check_id:
@@ -956,7 +956,7 @@ def _cp1(session: Session, _: date) -> None:
         cr = session.get(ChangeRequest, f"CR-{scc_id}-CREATE")
         if cr:
             cr.status = ChangeRequestStatus.APPROVED
-            cr.decided_by = "P-REYES"
+            cr.decided_by = "P-DAVID"
             cr.decided_on = d
             session.add(cr)
     session.flush()
@@ -979,20 +979,20 @@ def _cp3(session: Session, _: date) -> None:
 
 
 def _cp4(session: Session, _: date) -> None:
-    """CP4 — 2018-09-03: Reyes approves T-PWDPOLICY v2; SCC-02 v1 → SUPERSEDED while down; v2 → ACTIVE."""
+    """CP4 — 2018-09-03: David approves T-PWDPOLICY v2; SCC-02 v1 → SUPERSEDED while down; v2 → ACTIVE."""
     d = date(2018, 9, 3)
     set_clock(session, d)
 
-    # Create REEVALUATE change request for SCC-02 (Grant)
+    # Create REEVALUATE change request for SCC-02 (Marcus)
     cr = ChangeRequest(
         id="CR-SCC-02-REEVAL",
         type=ChangeRequestType.REEVALUATE,
         scc_id="SCC-02",
-        requested_by="P-GRANT",
+        requested_by="P-MARCUS",
         requested_on=d,
         reason="Most systems moved to SSO; password policy standard should only apply to non-SSO systems with stricter length requirement.",
         status=ChangeRequestStatus.APPROVED,
-        decided_by="P-REYES",
+        decided_by="P-DAVID",
         decided_on=d,
         auditor_note="Approved. T-PWDPOLICY v2 replaces v1 for SCC-02.",
     )
@@ -1031,7 +1031,7 @@ def _cp4(session: Session, _: date) -> None:
         max_single_downtime_days=7,
         evidence_type=EvidenceType.TESTED,
         supersedes_version_id="SCC-02-v1",
-        approved_by="P-REYES",
+        approved_by="P-DAVID",
         reason="SSO transition — stricter non-SSO standard.",
     )
     session.add(new_sv)
@@ -1045,7 +1045,7 @@ def _cp4(session: Session, _: date) -> None:
 
 def _cp5(session: Session, _: date) -> None:
     """CP5 — 2019-08-16: New OP-01 collector submitted → PENDING → SCC-07 UNKNOWN.
-    Then clock advances to 2019-09-05 and Reyes approves it."""
+    Then clock advances to 2019-09-05 and David approves it."""
     d_start = date(2019, 8, 16)
     set_clock(session, d_start)
 
@@ -1063,7 +1063,7 @@ def _cp5(session: Session, _: date) -> None:
     session.flush()
     append_event(session, d_start, "P-PRIYA", "collector_submitted", "collector",
                  "COL-OP01-2", {"check_id": "T-UPTIME", "version": "2"})
-    # Advance to 2019-09-05 and Reyes approves
+    # Advance to 2019-09-05 and David approves
     # (clock advance with pending collector means SCC-07 is UNKNOWN during 2019-08-16 to 2019-09-05)
     # Note: clock advance and approval done by CP5 continuation
 
@@ -1075,10 +1075,10 @@ def _cp5_approve(session: Session) -> None:
     col = session.get(Collector, "COL-OP01-2")
     if col:
         col.status = CollectorStatus.APPROVED
-        col.approved_by = "P-REYES"
+        col.approved_by = "P-DAVID"
         col.approved_on = d_approve
         session.add(col)
-        append_event(session, d_approve, "P-REYES", "collector_approved",
+        append_event(session, d_approve, "P-DAVID", "collector_approved",
                      "collector", "COL-OP01-2", {})
     session.flush()
 
@@ -1089,7 +1089,7 @@ def _cp6(session: Session, _: date) -> None:
 
 
 def _cp7(session: Session, _: date) -> None:
-    """CP7 — 2020-06-15: Grant requests DEPRECATE SCC-05, Reyes approves effective 2020-06-30."""
+    """CP7 — 2020-06-15: Marcus requests DEPRECATE SCC-05, David approves effective 2020-06-30."""
     d = date(2020, 6, 15)
     effective = date(2020, 6, 30)
     set_clock(session, d)
@@ -1097,11 +1097,11 @@ def _cp7(session: Session, _: date) -> None:
         id="CR-SCC-05-DEPRECATE",
         type=ChangeRequestType.DEPRECATE,
         scc_id="SCC-05",
-        requested_by="P-GRANT",
+        requested_by="P-MARCUS",
         requested_on=d,
         reason="Company no longer maintaining CM-01 as an attested SCC.",
         status=ChangeRequestStatus.APPROVED,
-        decided_by="P-REYES",
+        decided_by="P-DAVID",
         decided_on=d,
         effective_on=effective,
         auditor_note="Approved. SCC-05 citable for periods ending on or before 2020-06-30.",
@@ -1110,7 +1110,7 @@ def _cp7(session: Session, _: date) -> None:
     session.flush()
     # Apply the deprecation immediately (effective_on is in the near future;
     # check_pending_deprecations will fire it when the clock reaches 2020-06-30)
-    append_event(session, d, "P-REYES", "change_request_approved",
+    append_event(session, d, "P-DAVID", "change_request_approved",
                  "changerequest", cr.id, {"type": "DEPRECATE", "scc_id": "SCC-05"})
 
 

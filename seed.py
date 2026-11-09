@@ -228,10 +228,10 @@ def seed_db() -> None:
         # People
         people = [
             Person(id="P-PRIYA",   name="Priya Nair",      role=Role.CONTROL_OWNER,        title="IT Ops Engineer"),
-            Person(id="P-GRANT",   name="Marcus Tan",      role=Role.SECURITY_LEAD,        title="VP Security"),
-            Person(id="P-OKAFOR",  name="Rachel Lim",      role=Role.DISCLOSURE_COMMITTEE, title="CFO"),
-            Person(id="P-REYES",   name="David Ng",        role=Role.INDEPENDENT_AUDITOR,  title="External Auditor"),
-            Person(id="P-MORALES", name="Sharon Wong",     role=Role.AUDIT_COMMITTEE,      title="Audit Committee Chair"),
+            Person(id="P-MARCUS",  name="Marcus Tan",      role=Role.SECURITY_LEAD,        title="VP Security"),
+            Person(id="P-RACHEL",  name="Rachel Lim",      role=Role.DISCLOSURE_COMMITTEE, title="CFO"),
+            Person(id="P-DAVID",   name="David Ng",        role=Role.INDEPENDENT_AUDITOR,  title="External Auditor"),
+            Person(id="P-SHARON",  name="Sharon Wong",     role=Role.AUDIT_COMMITTEE,      title="Audit Committee Chair"),
         ]
         for p in people:
             s.add(p)
@@ -239,64 +239,64 @@ def seed_db() -> None:
         # Clock starts pre-CP1
         s.add(SimClock(current_date=date(2017, 11, 15)))
 
-        # Check definitions (defined by P-REYES, all v1)
+        # Check definitions (defined by P-DAVID, all v1)
         checks = [
             CheckDefinition(id="T-LEASTPRIV", version="1", name="Least Privilege",
                             threshold_desc="Admin share ≤ 10% of enabled human accounts; no shared accounts",
                             params=json.dumps({"max_admin_share": 0.10, "max_shared_accounts": 0}),
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-VPNDEVICE", version="1", name="VPN Managed Devices",
                             threshold_desc="0 VPN logins from unmanaged devices in trailing 30 days",
                             params=json.dumps({"max_unmanaged_logins": 0}),
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-MFA", version="1", name="MFA Coverage",
                             threshold_desc="MFA enforced on ≥ 98% of human accounts with remote access",
                             params=json.dumps({"min_coverage_pct": 98.0}),
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-PWDPOLICY", version="1", name="Password Policy v1",
                             threshold_desc="Every system: min_length ≥ 8, complexity on, rotation ≤ 90, history ≥ 5",
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-PWDPOLICY", version="2", name="Password Policy v2",
                             threshold_desc="Non-SSO systems: min_length ≥ 12, complexity on, history ≥ 5",
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2018, 9, 3)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2018, 9, 3)),
             CheckDefinition(id="T-SECRETS", version="1", name="No Exposed Credentials",
                             threshold_desc="No credential patterns in repos",
                             params=json.dumps({"public_repos_only": False}),
-                            test_frequency_days=7, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=7, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-SDLSCAN", version="1", name="SDL Security Scan",
                             threshold_desc="All pipelines have security_scan and dependency_check before release",
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
             CheckDefinition(id="T-UPTIME", version="1", name="Platform Availability",
                             threshold_desc="Each calendar month ≥ 99.9% availability",
                             params=json.dumps({"min_monthly_pct": 99.9}),
-                            test_frequency_days=30, defined_by="P-REYES", created_on=date(2017, 11, 15)),
+                            test_frequency_days=30, defined_by="P-DAVID", created_on=date(2017, 11, 15)),
         ]
         for c in checks:
             s.add(c)
 
-        # Collectors (v1, pre-approved by P-REYES)
+        # Collectors (v1, pre-approved by P-DAVID)
         collectors = [
             Collector(id="COL-AC01-1", check_id="T-LEASTPRIV", version="1", code_hash="abc001",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-AC02-1", check_id="T-VPNDEVICE", version="1", code_hash="abc002",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-AC03-1", check_id="T-MFA", version="1", code_hash="abc003",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-IA01-1", check_id="T-PWDPOLICY", version="1", code_hash="abc004",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-IA02-1", check_id="T-SECRETS", version="1", code_hash="abc005",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-SA01-1", check_id="T-SDLSCAN", version="1", code_hash="abc006",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
             Collector(id="COL-OP01-1", check_id="T-UPTIME", version="1", code_hash="abc007",
                       written_by="P-PRIYA", submitted_on=date(2017, 11, 15),
-                      status=CollectorStatus.APPROVED, approved_by="P-REYES", approved_on=date(2017, 11, 15)),
+                      status=CollectorStatus.APPROVED, approved_by="P-DAVID", approved_on=date(2017, 11, 15)),
         ]
         for c in collectors:
             s.add(c)
@@ -323,15 +323,15 @@ def seed_db() -> None:
         for c in controls:
             s.add(c)
 
-        # SCCs (all owned by P-GRANT, all PROPOSED — activated in CP1)
+        # SCCs (all owned by P-MARCUS, all PROPOSED — activated in CP1)
         sccs = [
-            SCC(id="SCC-01", title="Admin accounts and remote access controls", owner_id="P-GRANT"),
-            SCC(id="SCC-02", title="Password and credential security",          owner_id="P-GRANT"),
-            SCC(id="SCC-03", title="Secure development lifecycle",              owner_id="P-GRANT"),
-            SCC(id="SCC-04", title="NIST Cybersecurity Framework adherence",    owner_id="P-GRANT"),
-            SCC(id="SCC-05", title="Change management process",                 owner_id="P-GRANT"),
-            SCC(id="SCC-06", title="Multi-factor authentication",               owner_id="P-GRANT"),
-            SCC(id="SCC-07", title="Platform availability",                     owner_id="P-GRANT"),
+            SCC(id="SCC-01", title="Admin accounts and remote access controls", owner_id="P-MARCUS"),
+            SCC(id="SCC-02", title="Password and credential security",          owner_id="P-MARCUS"),
+            SCC(id="SCC-03", title="Secure development lifecycle",              owner_id="P-MARCUS"),
+            SCC(id="SCC-04", title="NIST Cybersecurity Framework adherence",    owner_id="P-MARCUS"),
+            SCC(id="SCC-05", title="Change management process",                 owner_id="P-MARCUS"),
+            SCC(id="SCC-06", title="Multi-factor authentication",               owner_id="P-MARCUS"),
+            SCC(id="SCC-07", title="Platform availability",                     owner_id="P-MARCUS"),
         ]
         for sc in sccs:
             s.add(sc)

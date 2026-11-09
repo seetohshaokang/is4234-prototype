@@ -25,7 +25,7 @@ const NAV_INTERNAL = [
   { to: "/changes",     icon: GitPullRequest,  label: "Change Requests",  roles: ["security_lead", "independent_auditor", "disclosure_committee", "audit_committee"] },
   { to: "/findings",    icon: AlertTriangle,   label: "Cases",            roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
   { to: "/escalations", icon: GitBranch,       label: "Escalations",      roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee"] },
-  { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: null },
+  { to: "/audit",       icon: BookOpen,        label: "Audit Trail",      roles: ["control_owner", "security_lead", "disclosure_committee", "audit_committee", "independent_auditor", "claim_author"] },
 ];
 
 const TOUR_KEY = "scc-tour-seen";

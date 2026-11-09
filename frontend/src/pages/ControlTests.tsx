@@ -319,7 +319,7 @@ export default function ChecksCollectors() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Security Checks</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Automated checks that measure each SCC's controls against live evidence.
+          Automated tests that verify each SCC's assertions against live evidence.
         </p>
       </div>
 

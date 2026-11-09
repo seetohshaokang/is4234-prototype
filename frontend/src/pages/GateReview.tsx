@@ -402,7 +402,7 @@ export default function ChangeRequests() {
                                 <input value={approveForm.evidence_type} onChange={e => setApproveForm(f => ({ ...f, evidence_type: e.target.value }))} className={inputCls} placeholder="e.g. automated_scan" />
                               </div>
                               <div>
-                                <label className="block text-xs font-medium text-slate-600 mb-1">Pinned Controls (comma-sep)</label>
+                                <label className="block text-xs font-medium text-slate-600 mb-1">Pinned Security Checks (comma-sep)</label>
                                 <input value={approveForm.pinned_controls} onChange={e => setApproveForm(f => ({ ...f, pinned_controls: e.target.value }))} className={inputCls} placeholder="CTL-01, CTL-02" />
                               </div>
                               <div>

@@ -6,12 +6,12 @@ from db import Role
 
 ACTORS = [
     {"id": "P-PRIYA",   "name": "Priya N.",    "role": Role.CONTROL_OWNER,       "title": "IT Ops Engineer"},
-    {"id": "P-GRANT",   "name": "T. Grant",    "role": Role.SECURITY_LEAD,        "title": "VP Security"},
+    {"id": "P-MARCUS",   "name": "T. Grant",    "role": Role.SECURITY_LEAD,        "title": "VP Security"},
     {"id": "P-DANA",    "name": "Dana L.",     "role": Role.CLAIM_AUTHOR,         "title": "Comms / Legal"},
-    {"id": "P-OKAFOR",  "name": "M. Okafor",  "role": Role.DISCLOSURE_COMMITTEE, "title": "CFO"},
+    {"id": "P-RACHEL",  "name": "M. Okafor",  "role": Role.DISCLOSURE_COMMITTEE, "title": "CFO"},
     {"id": "P-CHEN",    "name": "R. Chen",     "role": Role.DISCLOSURE_COMMITTEE, "title": "General Counsel"},
     {"id": "P-IBRAHIM", "name": "S. Ibrahim",  "role": Role.INTERNAL_AUDIT,       "title": "Head of Internal Audit"},
-    {"id": "P-MORALES", "name": "J. Morales",  "role": Role.AUDIT_COMMITTEE,      "title": "Audit Committee Chair"},
+    {"id": "P-SHARON", "name": "J. Morales",  "role": Role.AUDIT_COMMITTEE,      "title": "Audit Committee Chair"},
     {"id": "P-LEO",     "name": "Leo K.",      "role": Role.CONTROL_OWNER,        "title": "DevOps Engineer"},
 ]
 ACTORS_BY_ID = {a["id"]: a for a in ACTORS}
@@ -37,7 +37,7 @@ SEVERITY_COLORS = {
 
 def init_session():
     if "actor_id" not in st.session_state:
-        st.session_state.actor_id = "P-GRANT"
+        st.session_state.actor_id = "P-MARCUS"
 
 
 def render_sidebar_role():

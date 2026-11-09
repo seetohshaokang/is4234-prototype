@@ -24,11 +24,11 @@ export default function AboutPage() {
             <ul className="mt-2 space-y-1 text-sm text-slate-600 list-none pl-0">
               <li className="flex items-center gap-2">
                 <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium border bg-green-100 text-green-700 border-green-200">UPHELD</span>
-                <span>All pinned controls are passing; the assertion is backed by evidence.</span>
+                <span>All pinned security checks are passing; the assertion is backed by evidence.</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium border bg-red-100 text-red-700 border-red-200">DOWN</span>
-                <span>One or more controls are failing; the assertion cannot currently be made.</span>
+                <span>One or more security checks are failing; the assertion cannot currently be made.</span>
               </li>
               <li className="flex items-center gap-2">
                 <span className="inline-flex px-2 py-0.5 rounded text-xs font-medium border bg-gray-100 text-gray-700 border-gray-200">UNKNOWN</span>

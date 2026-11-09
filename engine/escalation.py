@@ -118,7 +118,7 @@ def compute_new_escalations(
     scc_owner_id: str = sv_dict.get("owner_id", scc_id)
 
     # People who own the SCC (conflict of interest for independence)
-    # Grant (P-GRANT) owns every SCC → always conflicts at L1/L2
+    # Grant (P-MARCUS) owns every SCC → always conflicts at L1/L2
     conflicted: set[str] = {scc_owner_id}
     if control_owner_ids:
         conflicted.update(control_owner_ids)

@@ -486,10 +486,10 @@ export default function SCCDetail() {
                 </div>
               )}
 
-              {/* Pinned controls */}
+              {/* Pinned security checks */}
               {ver.controls && ver.controls.length > 0 && (
                 <div className="mt-3">
-                  <div className="text-xs text-slate-500 mb-1">Pinned controls</div>
+                  <div className="text-xs text-slate-500 mb-1">Pinned security checks</div>
                   <div className="flex gap-2 flex-wrap">
                     {ver.controls.map(ctl => (
                       <span

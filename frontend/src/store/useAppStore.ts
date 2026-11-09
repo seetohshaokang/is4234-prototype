@@ -8,7 +8,7 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set) => ({
-  actorId: "P-MARCUS",
+  actorId: "P-GRANT",
   simDate: "2017-11-15",
   setActor: (id) => set({ actorId: id }),
   setSimDate: (date) => set({ simDate: date }),

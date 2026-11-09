@@ -16,7 +16,7 @@ SNAP = Path("data/snapshots")
 def _eval(controls=None, mappings=None, results=None, findings=None,
           acceptances=None, overrides=None, manual=None):
     return evaluate(
-        claim={"id": "C-01", "owner_id": "P-MARCUS"},
+        claim={"id": "C-01", "owner_id": "P-GRANT"},
         controls=controls or [],
         mappings=mappings or [],
         latest_results=results or {},
@@ -37,7 +37,7 @@ def test_r0_no_mappings():
 def test_r1_never_tested():
     verdict, rules, missing = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
     )
     assert verdict == "BLOCK"
     assert any(r.rule_id == "R1" for r in rules)
@@ -47,7 +47,7 @@ def test_r1_never_tested():
 def test_r1_manual_evidence_prevents_block():
     verdict, rules, _ = _eval(
         controls=[{"id": "CM-01", "test_frequency_days": 90}],
-        mappings=[{"claim_id": "C-01", "control_id": "CM-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "CM-01", "approved_by": "P-OKAFOR"}],
         manual=[{"control_id": "CM-01", "valid_until": date(2018, 2, 1), "summary": "attested"}],
     )
     assert verdict == "APPROVE"
@@ -57,7 +57,7 @@ def test_r1_manual_evidence_prevents_block():
 def test_r2_fail_result():
     verdict, rules, _ = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
         results={"AC-01": {"id": 1, "run_on": date(2017, 12, 1),
                            "outcome": "FAIL", "evidence_summary": "72% admin"}},
     )
@@ -68,7 +68,7 @@ def test_r2_fail_result():
 def test_r2_pass_result_approves():
     verdict, rules, _ = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
         results={"AC-01": {"id": 1, "run_on": date(2017, 12, 1),
                            "outcome": "PASS", "evidence_summary": "all good"}},
     )
@@ -78,7 +78,7 @@ def test_r2_pass_result_approves():
 def test_r3_open_high_finding():
     verdict, rules, _ = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
         results={"AC-01": {"id": 1, "run_on": date(2017, 12, 1),
                            "outcome": "PASS", "evidence_summary": "ok"}},
         findings=[{"id": "F-001", "control_id": "AC-01", "severity": "HIGH",
@@ -91,10 +91,10 @@ def test_r3_open_high_finding():
 def test_r8_override_downgrades_block_not_approve():
     verdict, rules, _ = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
         results={"AC-01": {"id": 1, "run_on": date(2017, 12, 1),
                            "outcome": "FAIL", "evidence_summary": "fail"}},
-        overrides=[{"id": "OV-1", "by_id": "P-RACHEL", "reason": "approved",
+        overrides=[{"id": "OV-1", "by_id": "P-OKAFOR", "reason": "approved",
                     "expires_on": date(2018, 3, 1), "status": "ACTIVE"}],
     )
     assert verdict == "ESCALATE"  # BLOCK downgraded to ESCALATE, not APPROVE
@@ -105,7 +105,7 @@ def test_block_beats_escalate():
     # R0 would give ESCALATE, but R2 should give BLOCK and win
     verdict, rules, _ = _eval(
         controls=[{"id": "AC-01", "test_frequency_days": 30}],
-        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-RACHEL"}],
+        mappings=[{"claim_id": "C-01", "control_id": "AC-01", "approved_by": "P-OKAFOR"}],
         results={"AC-01": {"id": 1, "run_on": date(2017, 11, 1),  # stale (R4) AND fail (R2)
                            "outcome": "FAIL", "evidence_summary": "fail"}},
     )
@@ -116,9 +116,9 @@ def test_block_beats_escalate():
 
 PEOPLE = [
     {"id": "P-PRIYA",   "role": "control_owner"},
-    {"id": "P-MARCUS",   "role": "security_lead"},
-    {"id": "P-RACHEL",  "role": "disclosure_committee"},
-    {"id": "P-SHARON", "role": "audit_committee"},
+    {"id": "P-GRANT",   "role": "security_lead"},
+    {"id": "P-OKAFOR",  "role": "disclosure_committee"},
+    {"id": "P-MORALES", "role": "audit_committee"},
 ]
 
 
@@ -145,7 +145,7 @@ def test_escalation_l3_at_30_days_if_published_claim():
     escs = compute_new_escalations(
         findings=[_finding("2018-06-04")],
         published_claim_control_ids={"AC-01"},
-        claim_by_control={"AC-01": {"id": "C-01", "owner_id": "P-MARCUS"}},
+        claim_by_control={"AC-01": {"id": "C-01", "owner_id": "P-GRANT"}},
         existing_escalations=[],
         people=PEOPLE,
         as_of=date(2018, 7, 4),  # 30 days later
@@ -171,23 +171,23 @@ def test_independence_skip_all_conflicted():
     # Everyone at L3 (disclosure_committee) is conflicted — should jump to L4
     conflicted_people = [
         {"id": "P-PRIYA",   "role": "control_owner"},
-        {"id": "P-MARCUS",   "role": "security_lead"},
-        {"id": "P-RACHEL",  "role": "disclosure_committee"},  # will be conflicted as claim owner
-        {"id": "P-SHARON", "role": "audit_committee"},
+        {"id": "P-GRANT",   "role": "security_lead"},
+        {"id": "P-OKAFOR",  "role": "disclosure_committee"},  # will be conflicted as claim owner
+        {"id": "P-MORALES", "role": "audit_committee"},
     ]
     finding = _finding("2018-06-04")
     finding["owner_id"] = "P-PRIYA"
     finding["raised_by_id"] = "P-PRIYA"
-    # claim owner is P-RACHEL (same as the only disclosure_committee member)
+    # claim owner is P-OKAFOR (same as the only disclosure_committee member)
     escs = compute_new_escalations(
         findings=[finding],
         published_claim_control_ids={"AC-01"},
-        claim_by_control={"AC-01": {"id": "C-01", "owner_id": "P-RACHEL"}},
+        claim_by_control={"AC-01": {"id": "C-01", "owner_id": "P-OKAFOR"}},
         existing_escalations=[],
         people=conflicted_people,
         as_of=date(2018, 7, 4),
     )
-    # L3 candidate P-RACHEL is conflicted, should jump to L4
+    # L3 candidate P-OKAFOR is conflicted, should jump to L4
     levels = [e["level"] for e in escs]
     assert 4 in levels or any("independence_skip" in e.get("reason","") for e in escs)
 

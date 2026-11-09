@@ -158,7 +158,7 @@ class ResolveBody(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _actor(actor_id: str) -> str:
-    return actor_id or "P-MARCUS"
+    return actor_id or "P-GRANT"
 
 
 # ── Case & escalation permissions ─────────────────────────────────────────────
@@ -346,7 +346,7 @@ def get_scc(scc_id: str):
 
 
 @router.post("/sccs")
-def create_scc_route(body: SCCCreateBody, actor_id: str = "P-DAVID"):
+def create_scc_route(body: SCCCreateBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             scc = auditor_create_scc(
@@ -361,7 +361,7 @@ def create_scc_route(body: SCCCreateBody, actor_id: str = "P-DAVID"):
 
 
 @router.post("/sccs/{scc_id}/revise")
-def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-DAVID"):
+def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             sv = auditor_revise_scc(
@@ -376,7 +376,7 @@ def revise_scc_route(scc_id: str, body: SCCReviseBody, actor_id: str = "P-DAVID"
 
 
 @router.post("/sccs/{scc_id}/deprecate")
-def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-DAVID"):
+def deprecate_scc_route(scc_id: str, body: SCCDeprecateBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             sv = auditor_deprecate_scc(session, _actor(actor_id), scc_id, body.reason)
@@ -457,7 +457,7 @@ def submit_collector_route(body: CollectorSubmitBody, actor_id: str = "P-PRIYA")
 
 
 @router.post("/collectors/{collector_id}/approve")
-def approve_collector_route(collector_id: str, actor_id: str = "P-DAVID"):
+def approve_collector_route(collector_id: str, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             col = approve_collector(session, collector_id, _actor(actor_id))
@@ -483,7 +483,7 @@ def list_change_requests():
 
 
 @router.post("/change-requests")
-def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-MARCUS"):
+def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-GRANT"):
     with get_session() as session:
         try:
             cr = create_change_request(session, body.type, body.scc_id,
@@ -495,7 +495,7 @@ def create_change_request_route(body: ChangeRequestBody, actor_id: str = "P-MARC
 
 @router.post("/change-requests/{cr_id}/approve")
 def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
-                                  actor_id: str = "P-DAVID"):
+                                  actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             kwargs = body.model_dump(exclude_none=True)
@@ -508,7 +508,7 @@ def approve_change_request_route(cr_id: str, body: ApproveChangeRequestBody,
 
 
 @router.post("/change-requests/{cr_id}/reject")
-def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P-DAVID"):
+def reject_change_request_route(cr_id: str, body: RejectBody, actor_id: str = "P-REYES"):
     with get_session() as session:
         try:
             cr = reject_change_request(session, cr_id, _actor(actor_id), body.auditor_note)
